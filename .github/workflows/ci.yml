@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      docker_smoke:
+        description: Run docker compose SQLite smoke after the local verifier
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom, fileinfo, gd, mbstring, openssl, pdo_pgsql, pdo_sqlite, redis, sqlite3, tokenizer, xml
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            worker/package-lock.json
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install dashboard dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install worker dependencies
+        run: npm --prefix worker ci --ignore-scripts
+
+      - name: Verify LaraWA
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.docker_smoke }}" == "true" ]]; then
+            scripts/verify.sh --with-compose-up
+          else
+            scripts/verify.sh
+          fi
