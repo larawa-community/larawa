@@ -1,0 +1,21 @@
+{
+  "name": "LaraWA",
+  "short_name": "LaraWA",
+  "icons": [
+    {
+      "src": "/images/laraWA-icon.png",
+      "sizes": "386x386",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/laraWA-icon.png",
+      "sizes": "386x386",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}

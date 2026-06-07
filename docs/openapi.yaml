@@ -1,0 +1,1022 @@
+openapi: 3.1.0
+info:
+  title: LaraWA API
+  version: 13.0.0
+  description: Self-hosted WhatsApp API gateway powered by Laravel and whatsapp-web.js.
+servers:
+  - url: http://localhost:8080/api/v1
+security:
+  - ApiKeyAuth: []
+  - ApiKeyHeader: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: LaraWA API key
+      description: "Send the one-time API key as `Authorization: Bearer lwa_...`."
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Alternate API key header for clients that cannot send bearer tokens.
+  schemas:
+    Session:
+      type: object
+      properties:
+        id: { type: integer }
+        uuid: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [created, initializing, qr, authenticated, ready, disconnected, auth_failure, failed] }
+        phone_number: { type: [string, "null"] }
+        qr_code: { type: [string, "null"] }
+        last_seen_at: { type: [string, "null"], format: date-time }
+    WorkerSessionState:
+      type: object
+      nullable: true
+      properties:
+        session_id: { type: string, format: uuid }
+        status: { type: string, enum: [initializing, qr, authenticated, ready, disconnected, auth_failure, failed] }
+        ready_at: { type: [string, "null"], format: date-time }
+        qr: { type: [string, "null"] }
+        qr_data_url: { type: [string, "null"] }
+        phone_number: { type: [string, "null"] }
+        platform: { type: [string, "null"] }
+        pushname: { type: [string, "null"] }
+    Chat:
+      type: object
+      properties:
+        id: { type: string, example: "15551234567@c.us" }
+        name: { type: [string, "null"] }
+        is_group: { type: boolean }
+        is_read_only: { type: boolean }
+        is_muted: { type: boolean }
+        mute_expiration: { type: [integer, "null"] }
+        unread_count: { type: integer }
+        timestamp: { type: [integer, "null"] }
+        archived: { type: boolean }
+        pinned: { type: boolean }
+        is_locked: { type: boolean }
+        last_message:
+          anyOf:
+            - $ref: "#/components/schemas/Message"
+            - type: "null"
+    Contact:
+      type: object
+      properties:
+        id: { type: string, example: "15551234567@c.us" }
+        number: { type: [string, "null"], example: "15551234567" }
+        name: { type: [string, "null"] }
+        pushname: { type: [string, "null"] }
+        short_name: { type: [string, "null"] }
+        is_business: { type: boolean }
+        is_enterprise: { type: boolean }
+        is_group: { type: boolean }
+        is_me: { type: boolean }
+        is_my_contact: { type: boolean }
+        is_user: { type: boolean }
+        is_wa_contact: { type: boolean }
+        is_blocked: { type: boolean }
+    Group:
+      allOf:
+        - $ref: "#/components/schemas/Chat"
+        - type: object
+          properties:
+            description: { type: [string, "null"] }
+            owner: { type: [string, "null"] }
+            created_at: { type: [string, "null"], format: date-time }
+            participant_count: { type: [integer, "null"] }
+            participants:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  is_admin: { type: boolean }
+                  is_super_admin: { type: boolean }
+    WebhookEvent:
+      type: string
+      enum:
+        - "*"
+        - webhook.test
+        - qr
+        - authenticated
+        - ready
+        - auth_failure
+        - disconnected
+        - worker.error
+        - message.received
+        - message.created
+        - message.status
+        - message.reaction
+        - group.join
+        - group.leave
+        - status
+    Message:
+      type: object
+      properties:
+        id: { type: integer }
+        wa_message_id: { type: [string, "null"] }
+        idempotency_key: { type: [string, "null"] }
+        direction: { type: string, enum: [incoming, outgoing] }
+        type: { type: string }
+        status: { type: string }
+        from: { type: [string, "null"] }
+        to: { type: [string, "null"] }
+        body: { type: [string, "null"] }
+        media_path: { type: [string, "null"] }
+        mime_type: { type: [string, "null"] }
+    Webhook:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        url: { type: string, format: uri }
+        events:
+          type: array
+          items: { type: string }
+        is_active: { type: boolean }
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: integer }
+        webhook_id: { type: [integer, "null"] }
+        event: { type: string }
+        attempts: { type: integer }
+        status: { type: string, enum: [pending, delivered, failed, exhausted, skipped] }
+        response_status: { type: [integer, "null"] }
+        response_body: { type: [string, "null"] }
+        delivered_at: { type: [string, "null"], format: date-time }
+    ApiKey:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        prefix: { type: string, example: lwa_abc12345 }
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+        ip_allow_list:
+          type: [array, "null"]
+          items: { type: string }
+        last_used_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+paths:
+  /sessions:
+    get:
+      summary: List WhatsApp sessions
+      description: Requires `sessions:read`. Supports filtering by status and case-insensitive search across name, UUID, phone number, and status.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [created, initializing, qr, authenticated, ready, disconnected, auth_failure, failed]
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200": { description: Sessions }
+    post:
+      summary: Create a WhatsApp session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: Support line }
+      responses:
+        "201": { description: Session created and worker initialization requested }
+  /sessions/{session}:
+    get:
+      summary: Get a WhatsApp session
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Session plus live worker state when the worker can be reached.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Session"
+                  worker:
+                    $ref: "#/components/schemas/WorkerSessionState"
+    delete:
+      summary: Delete a WhatsApp session
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                destroy_worker_session:
+                  type: boolean
+                  default: true
+                  description: Remove stored whatsapp-web.js LocalAuth data. Set false only when intentionally preserving browser auth material outside LaraWA.
+      responses:
+        "200": { description: Session deleted, worker stopped, and worker restore registry cleared }
+        "502": { description: Worker rejected the delete request; the LaraWA session row is kept }
+        "503": { description: Worker unavailable; the LaraWA session row is kept }
+  /sessions/{session}/chats:
+    get:
+      summary: List live chats for a connected session
+      description: Requires `sessions:read`. Returns a live snapshot from `whatsapp-web.js`; the session must be ready.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Live chats.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Chat"
+        "409": { description: Session is not ready }
+        "503": { description: Worker unavailable }
+  /sessions/{session}/contacts:
+    get:
+      summary: List live contacts for a connected session
+      description: Requires `sessions:read`. Returns non-group contacts from `whatsapp-web.js`; the session must be ready.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Live contacts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Contact"
+        "409": { description: Session is not ready }
+        "503": { description: Worker unavailable }
+  /sessions/{session}/groups:
+    get:
+      summary: List live groups for a connected session
+      description: Requires `sessions:read`. Use returned group ids ending in `@g.us` as message recipients.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Live groups.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Group"
+        "409": { description: Session is not ready }
+        "503": { description: Worker unavailable }
+  /sessions/{session}/refresh:
+    post:
+      summary: Request worker reconnect or QR refresh
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      responses:
+        "202": { description: Worker reconnect requested }
+        "502": { description: Worker rejected the refresh request }
+        "503": { description: Worker unavailable }
+  /sessions/{session}/disconnect:
+    post:
+      summary: Stop a session while preserving WhatsApp auth
+      description: Requires `sessions:write`. Stops the active worker client, unregisters it from automatic worker restoration, keeps LocalAuth files, and keeps the LaraWA session row for later reconnect.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Session stopped and auth data preserved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Session"
+                  worker:
+                    type: object
+        "502": { description: Worker rejected the stop request; local session state is not changed }
+        "503": { description: Worker unavailable; local session state is not changed }
+  /sessions/{session}/logout:
+    post:
+      summary: Log out a session and remove WhatsApp auth
+      description: Requires `sessions:write`. Stops the worker client, removes stored LocalAuth data, clears QR and phone metadata, and keeps the LaraWA session row so reconnect can generate a fresh QR.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Session logged out and auth data removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Session"
+                  worker:
+                    type: object
+        "502": { description: Worker rejected the logout request; local session state is not changed }
+        "503": { description: Worker unavailable; local session state is not changed }
+  /sessions/{session}/messages/text:
+    post:
+      summary: Send a text message
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, text]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                text: { type: string, example: Hello from LaraWA }
+                idempotency_key:
+                  type: string
+                  description: Optional caller-provided key that makes retries return the original message instead of sending a duplicate.
+      responses:
+        "202": { description: Queued/sent through whatsapp-web.js }
+        "422": { description: The text payload is invalid, or the worker reports the contact number is not registered on WhatsApp }
+        "409": { description: Idempotency key already used with a different payload }
+  /sessions/{session}/messages/media:
+    post:
+      summary: Send image, video, document, or audio
+      description: Requires `messages:send`. Media payloads require valid base64 or a valid URL plus a MIME type matching the selected media type, except documents which accept any valid MIME type. Decoded base64 media is capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` before storage and by `WA_WORKER_MEDIA_BASE64_MAX_BYTES` at the worker boundary; both default to 25 MiB. `media_url` and each redirect target must resolve to a public HTTP(S) host unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, type, mime_type]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                type: { type: string, enum: [image, video, document, audio] }
+                media_url: { type: string, format: uri }
+                media_base64:
+                  type: string
+                  description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                mime_type: { type: string, example: image/png }
+                filename: { type: string, example: image.png }
+                caption: { type: string }
+                idempotency_key:
+                  type: string
+                  description: Optional caller-provided key that makes retries return the original message instead of sending a duplicate.
+      responses:
+        "202": { description: Queued/sent through whatsapp-web.js }
+        "422": { description: "`media_url` or `media_base64` is required, the media payload is invalid or exceeds the decoded media size limit, or the worker reports the contact number is not registered on WhatsApp" }
+        "409": { description: Idempotency key already used with a different payload }
+  /sessions/{session}/messages/image:
+    post:
+      summary: Send an image message
+      description: Requires `messages:send`. Equivalent to `/messages/media` with `type=image`; `mime_type` must be an image MIME type. Decoded base64 media is capped by the configured media byte limits. `media_url` and each redirect target must resolve to a public HTTP(S) host unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, mime_type]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                media_url: { type: string, format: uri }
+                media_base64:
+                  type: string
+                  description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                mime_type: { type: string, example: image/png }
+                filename: { type: string, example: image.png }
+                caption: { type: string }
+                idempotency_key: { type: string }
+      responses:
+        "202": { description: Image queued/sent through whatsapp-web.js }
+        "422": { description: "`media_url` or `media_base64` is required, the media payload is invalid or exceeds the decoded media size limit, or the worker reports the contact number is not registered on WhatsApp" }
+  /sessions/{session}/messages/video:
+    post:
+      summary: Send a video message
+      description: Requires `messages:send`. Equivalent to `/messages/media` with `type=video`; `mime_type` must be a video MIME type. Decoded base64 media is capped by the configured media byte limits. `media_url` and each redirect target must resolve to a public HTTP(S) host unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, mime_type]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                media_url: { type: string, format: uri }
+                media_base64:
+                  type: string
+                  description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                mime_type: { type: string, example: video/mp4 }
+                filename: { type: string, example: clip.mp4 }
+                caption: { type: string }
+                idempotency_key: { type: string }
+      responses:
+        "202": { description: Video queued/sent through whatsapp-web.js }
+        "422": { description: "`media_url` or `media_base64` is required, the media payload is invalid or exceeds the decoded media size limit, or the worker reports the contact number is not registered on WhatsApp" }
+  /sessions/{session}/messages/document:
+    post:
+      summary: Send a document message
+      description: Requires `messages:send`. Equivalent to `/messages/media` with `type=document`; the worker sends the media as a WhatsApp document and accepts any valid MIME type. Decoded base64 media is capped by the configured media byte limits. `media_url` and each redirect target must resolve to a public HTTP(S) host unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, mime_type]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                media_url: { type: string, format: uri }
+                media_base64:
+                  type: string
+                  description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                mime_type: { type: string, example: application/pdf }
+                filename: { type: string, example: invoice.pdf }
+                caption: { type: string }
+                idempotency_key: { type: string }
+      responses:
+        "202": { description: Document queued/sent through whatsapp-web.js }
+        "422": { description: "`media_url` or `media_base64` is required, the media payload is invalid or exceeds the decoded media size limit, or the worker reports the contact number is not registered on WhatsApp" }
+  /sessions/{session}/messages/audio:
+    post:
+      summary: Send an audio message
+      description: Requires `messages:send`. Equivalent to `/messages/media` with `type=audio`; `mime_type` must be an audio MIME type. Decoded base64 media is capped by the configured media byte limits. `media_url` and each redirect target must resolve to a public HTTP(S) host unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, mime_type]
+              properties:
+                to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                media_url: { type: string, format: uri }
+                media_base64:
+                  type: string
+                  description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                mime_type: { type: string, example: audio/ogg }
+                filename: { type: string, example: voice.ogg }
+                as_voice:
+                  type: boolean
+                  description: Send audio as a WhatsApp voice note when supported by whatsapp-web.js.
+                idempotency_key: { type: string }
+      responses:
+        "202": { description: Audio queued/sent through whatsapp-web.js }
+        "422": { description: "`media_url` or `media_base64` is required, the media payload is invalid or exceeds the decoded media size limit, or the worker reports the contact number is not registered on WhatsApp" }
+  /sessions/{session}/messages/reaction:
+    post:
+      summary: Send a reaction
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, reaction]
+              properties:
+                message_id: { type: string }
+                reaction: { type: string, example: "👍" }
+                idempotency_key:
+                  type: string
+                  description: Optional caller-provided key that makes retries return the original message instead of sending a duplicate.
+      responses:
+        "202": { description: Reaction sent }
+        "409": { description: Idempotency key already used with a different payload }
+  /sessions/{session}/messages/bulk:
+    post:
+      summary: Send bulk text or media messages
+      description: Requires `messages:send`. Each item defaults to `type=text` when `type` is omitted. Media items support `image`, `video`, `document`, and `audio`; base64, decoded media size, URLs, MIME/type agreement, duplicate idempotency keys, and existing idempotency conflicts are validated for the whole batch before any worker send is attempted. `media_url` values and each redirect target must resolve to public HTTP(S) hosts unless `MEDIA_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          description: WhatsApp session UUID.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  maxItems: 500
+                  items:
+                    type: object
+                    required: [to]
+                    properties:
+                      to: { type: string, example: "+1 202-555-0100", description: "International phone number or contact chat id ending in @c.us for contacts; group sends require a group chat id ending in @g.us." }
+                      type: { type: string, enum: [text, image, video, document, audio] }
+                      text: { type: string }
+                      media_url: { type: string, format: uri }
+                      media_base64:
+                        type: string
+                        description: Raw base64 media. Decoded bytes are capped by `LARAWA_MEDIA_BASE64_MAX_BYTES` and `WA_WORKER_MEDIA_BASE64_MAX_BYTES`.
+                      mime_type: { type: string, example: image/png }
+                      filename: { type: string }
+                      caption: { type: string }
+                      as_voice: { type: boolean }
+                      idempotency_key:
+                        type: string
+                        description: Optional per-message idempotency key.
+      responses:
+        "202": { description: Bulk send results }
+        "422": { description: The batch contains invalid recipient, text, media, URL, MIME, base64, oversized decoded media payload data, duplicate idempotency keys, an existing idempotency conflict, or a contact number the worker reports is not registered on WhatsApp }
+  /messages:
+    get:
+      summary: List message logs
+      description: Requires `messages:read`. Supports operational filtering across session, direction, type, status, media presence, and text fields.
+      parameters:
+        - name: direction
+          in: query
+          schema: { type: string, enum: [incoming, outgoing] }
+        - name: type
+          in: query
+          schema: { type: string, example: image }
+        - name: status
+          in: query
+          schema: { type: string, example: failed }
+        - name: session
+          in: query
+          description: WhatsApp session UUID or numeric id.
+          schema: { type: string }
+        - name: q
+          in: query
+          description: Searches WhatsApp message id, from, to, body, and MIME type.
+          schema: { type: string, maxLength: 200 }
+        - name: has_media
+          in: query
+          schema: { type: boolean }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200": { description: Messages }
+  /messages/{message}/media:
+    get:
+      summary: Download stored message media
+      description: Requires `messages:read`. Streams media stored on the configured filesystem disk for a message in the caller's workspace.
+      parameters:
+        - name: message
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Binary media stream.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404": { description: Message has no stored media or media is unavailable }
+  /webhooks:
+    get:
+      summary: List webhooks
+      responses:
+        "200": { description: Webhooks }
+    post:
+      summary: Create webhook
+      description: Requires `webhooks:write`. The endpoint URL must resolve to a public HTTP(S) host unless `WEBHOOK_URL_ALLOW_PRIVATE=true`. Returns `plain_text_secret` once; stored webhook secrets are hidden from normal list and update responses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, url]
+              properties:
+                name: { type: string }
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WebhookEvent"
+      responses:
+        "201":
+          description: Webhook created. `plain_text_secret` is shown once and is hidden from later list/update responses.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Webhook"
+                  plain_text_secret:
+                    type: string
+                    example: whsec_abc123
+  /webhooks/{webhook}:
+    patch:
+      summary: Update webhook
+      description: Requires `webhooks:write`. Omitted fields keep their existing values; empty or null events fall back to `["*"]`. The endpoint URL must resolve to a public HTTP(S) host unless `WEBHOOK_URL_ALLOW_PRIVATE=true`.
+      parameters:
+        - name: webhook
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WebhookEvent"
+                is_active: { type: boolean }
+      responses:
+        "200":
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Webhook"
+    delete:
+      summary: Delete webhook
+      parameters:
+        - name: webhook
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: Deleted }
+  /webhooks/{webhook}/test:
+    post:
+      summary: Send a signed test delivery for a webhook
+      description: Requires `webhooks:write`. Queues a `webhook.test` delivery through the same HMAC signing and retry path used by live events. The webhook must be active.
+      parameters:
+        - name: webhook
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "202":
+          description: Webhook test delivery queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/WebhookDelivery"
+        "409": { description: Webhook is paused }
+  /webhooks/{webhook}/rotate-secret:
+    post:
+      summary: Rotate webhook signing secret
+      description: Requires `webhooks:write`. Generates a new `whsec_...` HMAC secret and returns `plain_text_secret` once with the updated webhook.
+      parameters:
+        - name: webhook
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Webhook secret rotated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/Webhook"
+                  plain_text_secret:
+                    type: string
+                    example: whsec_abc123
+  /webhook-deliveries:
+    get:
+      summary: List webhook deliveries
+      description: Requires `webhooks:read`. Supports optional status, event, webhook endpoint, and text search filters. Deliveries can be marked `skipped` when a webhook is paused, deleted, or rejected by the outbound URL policy at delivery time.
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, delivered, failed, exhausted, skipped] }
+        - name: event
+          in: query
+          schema:
+            type: string
+            enum: [webhook.test, qr, authenticated, ready, auth_failure, disconnected, worker.error, message.received, message.created, message.status, message.reaction, group.join, group.leave, status]
+        - name: webhook_id
+          in: query
+          schema: { type: integer }
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Paginated webhook deliveries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/WebhookDelivery"
+  /webhook-deliveries/{delivery}/retry:
+    post:
+      summary: Retry a webhook delivery
+      description: Requires `webhooks:write`. Pending, failed, exhausted, and skipped deliveries can be reset to pending and queued again. Delivered webhook deliveries are terminal and cannot be retried to avoid duplicate downstream side effects.
+      parameters:
+        - name: delivery
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "202":
+          description: Webhook delivery retry queued.
+        "422":
+          description: Delivered webhook deliveries cannot be retried.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/WebhookDelivery"
+  /api-keys:
+    get:
+      summary: List API keys
+      description: Requires `api-keys:read`.
+      responses:
+        "200":
+          description: Paginated API keys. Stored hashes are never returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ApiKey"
+    post:
+      summary: Create an API key
+      description: Requires `api-keys:write`. Non-wildcard keys can only grant scopes they already have. `expires_at` must be in the future when provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name: { type: string, example: Automation key }
+                scopes:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+                ip_allow_list:
+                  type: array
+                  items: { type: string }
+                  example: ["203.0.113.10", "198.51.100.0/24"]
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Optional future expiration timestamp.
+      responses:
+        "201":
+          description: API key created. `plain_text_key` is shown once and is not stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApiKey"
+                  plain_text_key:
+                    type: string
+        "422":
+          description: Invalid input or attempted scope escalation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+  /api-keys/{apiKey}:
+    patch:
+      summary: Update an API key
+      description: Requires `api-keys:write`. Non-wildcard keys can only update scopes to scopes they already have. Omitted fields keep their existing values. `expires_at` must be null or in the future when provided.
+      parameters:
+        - name: apiKey
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: Automation key }
+                scopes:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+                ip_allow_list:
+                  type: [array, "null"]
+                  items: { type: string }
+                  example: ["203.0.113.10", "198.51.100.0/24"]
+                expires_at:
+                  type: [string, "null"]
+                  format: date-time
+                  description: Optional future expiration timestamp, or null to clear expiration.
+      responses:
+        "200":
+          description: API key updated. Stored hashes are never returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApiKey"
+        "422":
+          description: Invalid input or attempted scope escalation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+    delete:
+      summary: Revoke an API key
+      description: Requires `api-keys:write`.
+      parameters:
+        - name: apiKey
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: API key revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api-keys/{apiKey}/rotate:
+    post:
+      summary: Rotate an API key
+      description: Requires `api-keys:write`. Replaces the stored hash and prefix, invalidates the previous bearer token immediately, and returns the replacement `plain_text_key` once.
+      parameters:
+        - name: apiKey
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: API key rotated. `plain_text_key` is shown once and is not stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  data:
+                    $ref: "#/components/schemas/ApiKey"
+                  plain_text_key:
+                    type: string

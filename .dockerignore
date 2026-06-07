@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+!.env.postgres.example
+vendor
+node_modules
+worker/node_modules
+storage
+database/database.sqlite
+bootstrap/cache/*.php
+public/build
+.phpunit.cache
+.phpunit.result.cache
+npm-debug.log
+tests
