@@ -35,6 +35,8 @@ class InstalledPlugin extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_UNINSTALLED = 'uninstalled';
+
     public const LICENSE_ACTIVE = 'active';
 
     public const LICENSE_TRIAL = 'trial';

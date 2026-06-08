@@ -148,7 +148,7 @@ http://localhost:8080/docs
 
 Language plugins:
 
-- [Japanese language plugin](https://github.com/larawa-community/larawa-lang-jp)
+- [Japanese language plugin](https://github.com/larawa-community/larawa-lang-ja)
 - [Korean language plugin](https://github.com/larawa-community/larawa-lang-ko)
 - [Traditional Chinese language plugin](https://github.com/larawa-community/larawa-lang-zh-hant)
 - [Simplified Chinese language plugin](https://github.com/larawa-community/larawa-lang-zh-hans)

@@ -40,7 +40,24 @@ class PluginRepository
             return collect();
         }
 
-        return $this->discover()->map(fn (array $manifest) => $this->install($manifest));
+        $installed = $this->discover()->map(fn (array $manifest) => $this->install($manifest));
+        $discoveredIds = $installed->pluck('plugin_id')->all();
+
+        $missing = InstalledPlugin::query()
+            ->where('status', '!=', InstalledPlugin::STATUS_UNINSTALLED);
+
+        if ($discoveredIds !== []) {
+            $missing->whereNotIn('plugin_id', $discoveredIds);
+        }
+
+        $missing->update([
+            'status' => InstalledPlugin::STATUS_UNINSTALLED,
+            'enabled_at' => null,
+            'last_error' => 'App manifest was not discovered in the configured plugin paths.',
+            'updated_at' => now(),
+        ]);
+
+        return $installed;
     }
 
     public function install(array $manifest): InstalledPlugin
@@ -59,12 +76,14 @@ class PluginRepository
             'manifest' => $manifest,
             'installed_at' => $plugin->installed_at ?: now(),
             'last_discovered_at' => now(),
-            'last_error' => $compatible ? null : 'Plugin is not compatible with LaraWA '.$this->coreVersion().'.',
+            'last_error' => $compatible ? null : 'App is not compatible with LaraWA '.$this->coreVersion().'.',
         ]);
 
         if (! $plugin->exists) {
             $plugin->status = $compatible ? InstalledPlugin::STATUS_DISABLED : InstalledPlugin::STATUS_INCOMPATIBLE;
             $plugin->license_status = $manifest['license_required'] ? InstalledPlugin::LICENSE_INVALID : InstalledPlugin::LICENSE_ACTIVE;
+        } elseif ($plugin->status === InstalledPlugin::STATUS_UNINSTALLED) {
+            $plugin->status = $compatible ? InstalledPlugin::STATUS_DISABLED : InstalledPlugin::STATUS_INCOMPATIBLE;
         } elseif (! $compatible) {
             $plugin->status = InstalledPlugin::STATUS_INCOMPATIBLE;
             $plugin->enabled_at = null;
@@ -85,7 +104,27 @@ class PluginRepository
             return null;
         }
 
-        return InstalledPlugin::where('plugin_id', $pluginId)->first();
+        try {
+            $this->syncDiscovered();
+        } catch (Throwable) {
+            //
+        }
+
+        $plugin = InstalledPlugin::where('plugin_id', $pluginId)
+            ->where('status', '!=', InstalledPlugin::STATUS_UNINSTALLED)
+            ->first();
+
+        if ($plugin && ! $this->manifestExists($plugin)) {
+            $plugin->forceFill([
+                'status' => InstalledPlugin::STATUS_UNINSTALLED,
+                'enabled_at' => null,
+                'last_error' => 'App manifest was not discovered in the configured plugin paths.',
+            ])->save();
+
+            return null;
+        }
+
+        return $plugin;
     }
 
     public function all(): Collection
@@ -95,11 +134,19 @@ class PluginRepository
         }
 
         try {
-            $this->syncDiscovered();
+            $discovered = $this->syncDiscovered();
 
-            return InstalledPlugin::with('license')->orderBy('name')->get();
+            return InstalledPlugin::with('license')
+                ->whereIn('plugin_id', $discovered->pluck('plugin_id'))
+                ->orderBy('name')
+                ->get();
         } catch (Throwable) {
-            return InstalledPlugin::with('license')->orderBy('name')->get();
+            return InstalledPlugin::with('license')
+                ->where('status', '!=', InstalledPlugin::STATUS_UNINSTALLED)
+                ->whereNotNull('last_discovered_at')
+                ->orderBy('name')
+                ->get()
+                ->filter(fn (InstalledPlugin $plugin) => $this->manifestExists($plugin));
         }
     }
 
@@ -119,11 +166,22 @@ class PluginRepository
             ->where('status', InstalledPlugin::STATUS_ENABLED)
             ->orderBy('name')
             ->get()
+            ->filter(fn (InstalledPlugin $plugin) => $this->manifestExists($plugin))
             ->filter(fn (InstalledPlugin $plugin) => $plugin->licenseAllowsLoading());
     }
 
     public function enable(InstalledPlugin $plugin): void
     {
+        if (! $this->manifestExists($plugin)) {
+            $plugin->forceFill([
+                'status' => InstalledPlugin::STATUS_UNINSTALLED,
+                'enabled_at' => null,
+                'last_error' => 'App manifest was not discovered in the configured plugin paths.',
+            ])->save();
+
+            throw new \RuntimeException('This app is not installed.');
+        }
+
         $manifest = $plugin->manifest ?: $this->manifestReader->read($plugin->manifest_path);
         $this->guardManifest($manifest);
 
@@ -131,16 +189,16 @@ class PluginRepository
             $plugin->forceFill([
                 'status' => InstalledPlugin::STATUS_INCOMPATIBLE,
                 'enabled_at' => null,
-                'last_error' => 'Plugin is not compatible with LaraWA '.$this->coreVersion().'.',
+                'last_error' => 'App is not compatible with LaraWA '.$this->coreVersion().'.',
             ])->save();
 
-            throw new \RuntimeException('This plugin is not compatible with the current LaraWA version.');
+            throw new \RuntimeException('This app is not compatible with the current LaraWA version.');
         }
 
         $license = $this->licenseManager->validate($plugin);
 
         if ($plugin->license_required && ! in_array($license->status, [InstalledPlugin::LICENSE_ACTIVE, InstalledPlugin::LICENSE_TRIAL], true)) {
-            throw new \RuntimeException('This plugin cannot be enabled until its license is active or trial.');
+            throw new \RuntimeException('This app cannot be enabled until its license is active or trial.');
         }
 
         $plugin->forceFill([
@@ -223,6 +281,11 @@ class PluginRepository
     private function guardManifest(array $manifest): void
     {
         $this->manifestReader->read($manifest['manifest_path'] ?? '');
+    }
+
+    private function manifestExists(InstalledPlugin $plugin): bool
+    {
+        return is_string($plugin->manifest_path) && is_file($plugin->manifest_path);
     }
 
     private function manifestPaths(string $root): array

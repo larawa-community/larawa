@@ -4,7 +4,7 @@
             <section class="rounded-lg border border-slate-200 bg-white">
                 <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
                     <div>
-                        <a href="{{ route('dashboard.marketplace.index') }}" class="text-sm font-semibold text-[#128c42]">Back to Marketplace</a>
+                        <a href="{{ route('dashboard.marketplace.index') }}" class="text-sm font-semibold text-[#128c42]">Back to Marketplace App</a>
                         <h2 class="mt-2 text-lg font-semibold">{{ __('dashboard.marketplace.details') }}</h2>
                         <p class="mt-1 text-sm text-slate-500">{{ $plugin->description }}</p>
                     </div>

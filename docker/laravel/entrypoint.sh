@@ -42,6 +42,8 @@ if [ -d /var/www/html/public.dist ]; then
 fi
 
 if [ "${LARAWA_BOOTSTRAP:-false}" = "true" ]; then
+  rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
+
   if [ "${DB_CONNECTION:-sqlite}" = "sqlite" ]; then
     mkdir -p "$(dirname "$SQLITE_DATABASE")"
     if [ ! -s "$SQLITE_DATABASE" ] && [ -s /legacy-database/database.sqlite ]; then

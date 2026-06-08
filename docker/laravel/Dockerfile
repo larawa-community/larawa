@@ -36,7 +36,7 @@ RUN chmod +x /usr/local/bin/larawa-entrypoint /usr/local/bin/larawa-healthcheck 
     && mkdir -p /var/www/html/public.dist \
     && cp -a public/. /var/www/html/public.dist/ \
     && mkdir -p storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache database \
-    && composer dump-autoload --optimize \
+    && composer dump-autoload --no-dev --optimize \
     && chown -R www-data:www-data storage bootstrap/cache database public.dist \
     && chmod -R a+rX public.dist
 

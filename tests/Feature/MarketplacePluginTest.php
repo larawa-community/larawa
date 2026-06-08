@@ -22,20 +22,21 @@ class MarketplacePluginTest extends TestCase
         $this->actingAs($admin)
             ->get(route('dashboard.marketplace.index'))
             ->assertOk()
-            ->assertSee('Japanese Dashboard Translation')
+            ->assertSee('Marketplace App')
+            ->assertSee('Installed Apps')
             ->assertSee('Korean Dashboard Translation');
 
         $this->assertDatabaseHas('installed_plugins', [
-            'plugin_id' => 'larawa-lang-ja',
+            'plugin_id' => 'larawa-lang-ko',
             'status' => InstalledPlugin::STATUS_DISABLED,
         ]);
 
         $this->actingAs($admin)
-            ->post(route('dashboard.marketplace.enable', 'larawa-lang-ja'))
+            ->post(route('dashboard.marketplace.enable', 'larawa-lang-ko'))
             ->assertRedirect();
 
         $this->assertDatabaseHas('installed_plugins', [
-            'plugin_id' => 'larawa-lang-ja',
+            'plugin_id' => 'larawa-lang-ko',
             'status' => InstalledPlugin::STATUS_ENABLED,
             'license_status' => InstalledPlugin::LICENSE_ACTIVE,
         ]);
@@ -45,29 +46,29 @@ class MarketplacePluginTest extends TestCase
         $this->actingAs($admin)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('日本語');
+            ->assertSee('한국어');
 
         $this->actingAs($admin)
             ->patch(route('dashboard.account.language.update'), [
-                'dashboard_locale' => 'ja',
+                'dashboard_locale' => 'ko',
             ])
             ->assertRedirect();
 
-        $this->assertSame('ja', $admin->fresh()->dashboard_locale);
+        $this->assertSame('ko', $admin->fresh()->dashboard_locale);
 
         $this->actingAs($admin)
             ->get(route('dashboard.marketplace.index'))
             ->assertOk()
-            ->assertSee('マーケットプレイス');
+            ->assertSee('마켓플레이스');
 
         $this->actingAs($admin)
-            ->post(route('dashboard.marketplace.disable', 'larawa-lang-ja'))
+            ->post(route('dashboard.marketplace.disable', 'larawa-lang-ko'))
             ->assertRedirect();
 
         $this->actingAs($admin)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertDontSee('日本語')
+            ->assertDontSee('한국어')
             ->assertSee('English');
     }
 
@@ -91,14 +92,99 @@ class MarketplacePluginTest extends TestCase
             ->assertOk();
 
         $this->actingAs($admin)
-            ->get(route('dashboard.marketplace.show', 'larawa-lang-ja'))
+            ->get(route('dashboard.marketplace.show', 'larawa-lang-ko'))
             ->assertOk()
-            ->assertSee('Japanese Dashboard Translation')
-            ->assertSee('Plugin ID')
-            ->assertSee('larawa-lang-ja')
-            ->assertSee('This plugin does not expose administrator settings.')
-            ->assertSee('License-free plugin')
+            ->assertSee('Korean Dashboard Translation')
+            ->assertSee('App ID')
+            ->assertSee('larawa-lang-ko')
+            ->assertSee('This app does not expose administrator settings.')
+            ->assertSee('License-free app')
             ->assertDontSee('Enter replacement key');
+    }
+
+    public function test_removed_app_folder_is_hidden_and_marked_uninstalled(): void
+    {
+        $admin = $this->siteAdmin();
+        $path = $this->withSimpleFixture('larawa-removable-test', 'Removable Test App');
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertSee('Removable Test App');
+
+        File::deleteDirectory($path);
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertDontSee('Removable Test App');
+
+        $this->assertDatabaseHas('installed_plugins', [
+            'plugin_id' => 'larawa-removable-test',
+            'status' => InstalledPlugin::STATUS_UNINSTALLED,
+            'enabled_at' => null,
+            'last_error' => 'App manifest was not discovered in the configured plugin paths.',
+        ]);
+    }
+
+    public function test_restored_or_uploaded_app_folder_is_listed_and_can_enable(): void
+    {
+        $admin = $this->siteAdmin();
+        $path = $this->withSimpleFixture('larawa-restore-test', 'Restored Test App');
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertSee('Restored Test App');
+
+        File::deleteDirectory($path);
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertDontSee('Restored Test App');
+
+        $this->withSimpleFixture('larawa-restore-test', 'Restored Test App');
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertSee('Restored Test App');
+
+        $this->actingAs($admin)
+            ->post(route('dashboard.marketplace.enable', 'larawa-restore-test'))
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('installed_plugins', [
+            'plugin_id' => 'larawa-restore-test',
+            'status' => InstalledPlugin::STATUS_ENABLED,
+        ]);
+    }
+
+    public function test_removed_app_cannot_be_opened_or_enabled_from_stale_database_record(): void
+    {
+        $admin = $this->siteAdmin();
+        $path = $this->withSimpleFixture('larawa-stale-test', 'Stale Test App');
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.index'))
+            ->assertOk()
+            ->assertSee('Stale Test App');
+
+        File::deleteDirectory($path);
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.marketplace.show', 'larawa-stale-test'))
+            ->assertNotFound();
+
+        $this->actingAs($admin)
+            ->post(route('dashboard.marketplace.enable', 'larawa-stale-test'))
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('installed_plugins', [
+            'plugin_id' => 'larawa-stale-test',
+            'status' => InstalledPlugin::STATUS_UNINSTALLED,
+        ]);
     }
 
     public function test_plugin_core_compatibility_uses_larawa_release_version(): void
@@ -115,7 +201,7 @@ class MarketplacePluginTest extends TestCase
         $this->assertDatabaseHas('installed_plugins', [
             'plugin_id' => 'larawa-incompatible-test',
             'status' => InstalledPlugin::STATUS_INCOMPATIBLE,
-            'last_error' => 'Plugin is not compatible with LaraWA 13.0.0.',
+            'last_error' => 'App is not compatible with LaraWA 13.0.0.',
         ]);
     }
 
@@ -128,87 +214,87 @@ class MarketplacePluginTest extends TestCase
             ->assertOk();
 
         $this->actingAs($admin)
-            ->post(route('dashboard.marketplace.enable', 'larawa-lang-ja'))
+            ->post(route('dashboard.marketplace.enable', 'larawa-lang-ko'))
             ->assertRedirect();
 
         $this->actingAs($admin)
             ->patch(route('dashboard.account.language.update'), [
-                'dashboard_locale' => 'ja',
+                'dashboard_locale' => 'ko',
             ])
             ->assertRedirect()
-            ->assertCookie('dashboard_locale', 'ja');
+            ->assertCookie('dashboard_locale', 'ko');
 
-        $this->assertSame('ja', $admin->fresh()->dashboard_locale);
+        $this->assertSame('ko', $admin->fresh()->dashboard_locale);
 
         $this->actingAs($admin)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
+            ->assertSee('<html lang="ko">', false)
             ->assertSee('data-auto-submit', false)
             ->assertDontSee('onchange="this.form.submit()"', false)
-            ->assertSee('最近のセッション');
+            ->assertSee('최근 세션');
 
         $this->actingAs($admin)
             ->get(route('dashboard.workspace.select'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
-            ->assertSee('ワークスペースを選択')
-            ->assertSee('選択');
+            ->assertSee('<html lang="ko">', false)
+            ->assertSee('워크스페이스 선택')
+            ->assertSee('선택');
 
         $this->actingAs($admin)
             ->get(route('dashboard.account.password'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
-            ->assertSee('パスワード変更')
-            ->assertSee('現在のパスワード');
+            ->assertSee('<html lang="ko">', false)
+            ->assertSee('비밀번호 변경')
+            ->assertSee('현재 비밀번호');
 
         $this->actingAs($admin)
             ->get(route('dashboard.account.two-factor'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
-            ->assertSee('二要素認証')
-            ->assertSee('2FA を設定');
+            ->assertSee('<html lang="ko">', false)
+            ->assertSee('2단계 인증')
+            ->assertSee('2FA 설정');
 
         $this->actingAs($admin)
             ->get(route('dashboard.account.passkeys'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
-            ->assertSee('パスキー')
-            ->assertSee('パスキーを追加')
-            ->assertSee('登録済みのパスキーはありません。');
+            ->assertSee('<html lang="ko">', false)
+            ->assertSee('패스키')
+            ->assertSee('패스키 추가')
+            ->assertSee('등록된 패스키가 없습니다.');
 
         auth()->logout();
 
         $this->post(route('locale.update'), [
-            'locale' => 'ja',
+            'locale' => 'ko',
         ])
             ->assertRedirect()
-            ->assertCookie('dashboard_locale', 'ja');
+            ->assertCookie('dashboard_locale', 'ko');
 
-        $this->withCookie('dashboard_locale', 'ja')
+        $this->withCookie('dashboard_locale', 'ko')
             ->get(route('login'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
+            ->assertSee('<html lang="ko">', false)
             ->assertSee('data-auto-submit', false)
             ->assertSee('name="locale"', false)
-            ->assertSee('日本語')
-            ->assertSee('ログイン');
+            ->assertSee('한국어')
+            ->assertSee('로그인');
 
-        $this->withCookie('dashboard_locale', 'ja')
+        $this->withCookie('dashboard_locale', 'ko')
             ->withSession(['two_factor_login' => ['user_id' => $admin->id, 'remember' => false]])
             ->get(route('login.two-factor'))
             ->assertOk()
-            ->assertSee('<html lang="ja">', false)
+            ->assertSee('<html lang="ko">', false)
             ->assertSee('data-auto-submit', false)
             ->assertSee('name="locale"', false)
-            ->assertSee('日本語')
-            ->assertSee('二要素認証');
+            ->assertSee('한국어')
+            ->assertSee('2단계 인증');
 
-        $this->withCookie('dashboard_locale', 'ja')
+        $this->withCookie('dashboard_locale', 'ko')
             ->get('/missing-localized-page')
             ->assertNotFound()
-            ->assertSee('<html lang="ja">', false)
-            ->assertSee('ページが見つかりません');
+            ->assertSee('<html lang="ko">', false)
+            ->assertSee('페이지를 찾을 수 없음');
     }
 
     public function test_all_language_plugins_cover_account_security_pages(): void
@@ -234,16 +320,6 @@ class MarketplacePluginTest extends TestCase
                 'passkeys_title' => '通行密钥',
                 'passkeys_add' => '添加通行密钥',
                 'passkeys_empty' => '没有已注册的通行密钥。',
-            ],
-            'ja' => [
-                'plugin' => 'larawa-lang-ja',
-                'password_title' => 'パスワード変更',
-                'current_password' => '現在のパスワード',
-                'two_factor_title' => '二要素認証',
-                'two_factor_setup' => '2FA を設定',
-                'passkeys_title' => 'パスキー',
-                'passkeys_add' => 'パスキーを追加',
-                'passkeys_empty' => '登録済みのパスキーはありません。',
             ],
             'ko' => [
                 'plugin' => 'larawa-lang-ko',
@@ -410,6 +486,26 @@ class MarketplacePluginTest extends TestCase
         sort($keys);
 
         return $keys;
+    }
+
+    private function withSimpleFixture(string $pluginId, string $name): string
+    {
+        $path = storage_path("framework/testing/plugins/{$pluginId}");
+        File::ensureDirectoryExists($path);
+        File::put($path.'/larawa-plugin.json', json_encode([
+            'id' => $pluginId,
+            'name' => $name,
+            'version' => '1.0.0',
+            'type' => 'integration',
+            'description' => 'Synthetic app used by Marketplace App filesystem sync tests.',
+            'required_core_version' => '^13.0',
+            'license_required' => false,
+            'service_providers' => [],
+        ], JSON_PRETTY_PRINT));
+
+        config(['plugins.paths' => [base_path('plugins'), storage_path('framework/testing/plugins')]]);
+
+        return $path;
     }
 
     private function withLicensedFixture(): void

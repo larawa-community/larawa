@@ -12,7 +12,7 @@ class LocalPluginLicenseValidator implements PluginLicenseValidator
     public function validate(InstalledPlugin $plugin, ?PluginLicense $license): array
     {
         if (! $plugin->license_required) {
-            return ['status' => InstalledPlugin::LICENSE_ACTIVE, 'message' => 'License-free plugin.', 'expires_at' => null];
+            return ['status' => InstalledPlugin::LICENSE_ACTIVE, 'message' => 'License-free app.', 'expires_at' => null];
         }
 
         $key = trim((string) $license?->license_key);
