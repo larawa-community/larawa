@@ -14,10 +14,10 @@ usage() {
 Usage: scripts/verify.sh [--with-compose-up] [--with-postgres-up]
 
 Runs the LaraWA release verification checks:
+  - Vite production build
   - Laravel feature/unit tests
   - Composer and npm production dependency audits
   - Pint formatting check
-  - Vite production build
   - WhatsApp worker syntax check
   - OpenAPI YAML parse
   - Docker Compose config validation for SQLite and PostgreSQL profile
@@ -298,12 +298,12 @@ if [[ "$COMPOSE_UP" == "1" || "$POSTGRES_UP" == "1" ]]; then
     require_command curl
 fi
 
+run npm run build
 run php artisan test
 run composer audit --format=plain
 run npm audit --omit=dev
 run npm --prefix worker audit --omit=dev
 run ./vendor/bin/pint --test
-run npm run build
 run bash -n scripts/live-validate.sh
 run node --check worker/src/server.js
 run npm --prefix worker test
