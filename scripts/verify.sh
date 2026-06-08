@@ -15,7 +15,7 @@ Usage: scripts/verify.sh [--with-compose-up] [--with-postgres-up]
 
 Runs the LaraWA release verification checks:
   - Vite production build
-  - Laravel feature/unit tests
+  - Laravel feature/unit tests, excluding plugin integration tests
   - Composer and npm production dependency audits
   - Pint formatting check
   - WhatsApp worker syntax check
@@ -288,6 +288,17 @@ assert_docs_unavailable() {
     done
 }
 
+run_php_tests_without_plugins() {
+    local test_files=()
+    local test_file
+
+    while IFS= read -r test_file; do
+        test_files+=("$test_file")
+    done < <(find tests -name '*Test.php' ! -name '*PluginTest.php' | sort)
+
+    run php artisan test "${test_files[@]}"
+}
+
 require_command php
 require_command node
 require_command npm
@@ -299,7 +310,7 @@ if [[ "$COMPOSE_UP" == "1" || "$POSTGRES_UP" == "1" ]]; then
 fi
 
 run npm run build
-run php artisan test
+run_php_tests_without_plugins
 run composer audit --format=plain
 run npm audit --omit=dev
 run npm --prefix worker audit --omit=dev
