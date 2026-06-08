@@ -11,6 +11,8 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](docker-compose.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
+[Website](https://lara-wa.org)
+
 LaraWA is a self-hosted WhatsApp API wrapper built with Laravel for the PHP community.
 
 It gives developers a simple dashboard and REST API for connecting WhatsApp Web sessions, sending messages, receiving incoming messages, and forwarding events to webhooks. The WhatsApp engine runs on [`whatsapp-web.js`](https://github.com/pedroslopez/whatsapp-web.js), while Laravel handles the API, dashboard, users, sessions, API keys, message logs, and webhook delivery.

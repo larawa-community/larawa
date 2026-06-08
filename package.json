@@ -3,6 +3,7 @@
     "name": "larawa",
     "version": "13.0.0",
     "private": true,
+    "homepage": "https://lara-wa.org",
     "author": "LaraWA Community",
     "license": "MIT",
     "type": "module",

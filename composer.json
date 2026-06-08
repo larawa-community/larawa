@@ -3,6 +3,7 @@
     "name": "larawa-community/larawa",
     "type": "project",
     "description": "Self-hosted WhatsApp API gateway with a Laravel dashboard and whatsapp-web.js worker.",
+    "homepage": "https://lara-wa.org",
     "keywords": ["laravel", "whatsapp", "api", "gateway", "webhooks"],
     "license": "MIT",
     "authors": [
