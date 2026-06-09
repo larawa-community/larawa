@@ -142,17 +142,19 @@
                         @unless (request()->routeIs('dashboard.workspace.select'))
                             <a href="{{ route('dashboard.workspace.select') }}" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{{ __('dashboard.chrome.change_workspace') }}</a>
                         @endunless
-                        <form method="POST" action="{{ route('dashboard.account.language.update') }}" class="flex items-center gap-2" data-auto-submit>
-                            @csrf
-                            @method('PATCH')
-                            <label class="sr-only" for="dashboard_locale">{{ __('dashboard.language.label') }}</label>
-                            <select id="dashboard_locale" name="dashboard_locale" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">
-                                @foreach ($locales as $locale => $definition)
-                                    <option value="{{ $locale }}" @selected(app()->getLocale() === $locale)>{{ $definition['native'] }}</option>
-                                @endforeach
-                            </select>
-                            <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" data-auto-submit-fallback>{{ __('dashboard.language.apply') }}</button>
-                        </form>
+                        @if (count($locales) > 1)
+                            <form method="POST" action="{{ route('dashboard.account.language.update') }}" class="flex items-center gap-2" data-auto-submit>
+                                @csrf
+                                @method('PATCH')
+                                <label class="sr-only" for="dashboard_locale">{{ __('dashboard.language.label') }}</label>
+                                <select id="dashboard_locale" name="dashboard_locale" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">
+                                    @foreach ($locales as $locale => $definition)
+                                        <option value="{{ $locale }}" @selected(app()->getLocale() === $locale)>{{ $definition['native'] }}</option>
+                                    @endforeach
+                                </select>
+                                <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" data-auto-submit-fallback>{{ __('dashboard.language.apply') }}</button>
+                            </form>
+                        @endif
                         <form method="POST" action="{{ route('logout') }}" class="lg:hidden">
                             @csrf
                             <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{{ __('dashboard.account.logout') }}</button>

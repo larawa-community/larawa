@@ -32,6 +32,12 @@ class MarketplacePluginTest extends TestCase
         ]);
 
         $this->actingAs($admin)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('name="dashboard_locale"', false)
+            ->assertDontSee(route('dashboard.account.language.update'), false);
+
+        $this->actingAs($admin)
             ->post(route('dashboard.marketplace.enable', 'larawa-lang-ko'))
             ->assertRedirect();
 
@@ -69,7 +75,8 @@ class MarketplacePluginTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertDontSee('한국어')
-            ->assertSee('English');
+            ->assertDontSee('name="dashboard_locale"', false)
+            ->assertDontSee(route('dashboard.account.language.update'), false);
     }
 
     public function test_non_site_admin_cannot_manage_marketplace(): void
