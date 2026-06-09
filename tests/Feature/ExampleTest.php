@@ -1062,6 +1062,32 @@ class ExampleTest extends TestCase
         $this->assertFileExists($this->runtimeApplyPendingPath($envPath));
     }
 
+    public function test_settings_validation_uses_literal_environment_key_names(): void
+    {
+        $envPath = storage_path('framework/testing/dashboard-settings-validation.env');
+        @mkdir(dirname($envPath), 0775, true);
+        file_put_contents($envPath, implode(PHP_EOL, [
+            'APP_ENV=production',
+            'APP_URL=https://example.test',
+            '',
+        ]));
+
+        config(['larawa.env_path' => $envPath]);
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $user = User::factory()->create();
+        $workspace->users()->attach($user, ['role' => 'site_admin']);
+
+        $this->actingAs($user)
+            ->patch(route('dashboard.settings.update'), [
+                'env' => [
+                    'APP_ENV' => 'Production',
+                    'APP_URL' => 'https://example.test',
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['APP_ENV' => 'The selected APP_ENV is invalid.']);
+    }
+
     public function test_site_admin_can_apply_runtime_environment_settings(): void
     {
         $envPath = storage_path('framework/testing/dashboard-settings-apply.env');

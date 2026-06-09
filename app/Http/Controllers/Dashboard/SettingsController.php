@@ -155,6 +155,16 @@ class SettingsController extends Controller
         'AWS_USE_PATH_STYLE_ENDPOINT',
     ];
 
+    private const OPTION_KEYS = [
+        'APP_ENV' => ['local', 'production', 'staging', 'testing'],
+        'DB_CONNECTION' => ['sqlite', 'mysql', 'pgsql', 'mariadb', 'sqlsrv'],
+        'DB_SSLMODE' => ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'],
+        'CACHE_STORE' => ['array', 'database', 'file', 'memcached', 'redis', 'dynamodb', 'storage', 'octane', 'session', 'failover', 'null'],
+        'QUEUE_CONNECTION' => ['sync', 'database', 'beanstalkd', 'sqs', 'redis', 'deferred', 'background', 'failover', 'null'],
+        'SESSION_DRIVER' => ['file', 'cookie', 'database', 'apc', 'memcached', 'redis', 'dynamodb', 'array'],
+        'FILESYSTEM_DISK' => ['local', 'public', 's3'],
+    ];
+
     public function index(Request $request, ConfigurationDiagnostics $diagnostics, EnvironmentFile $environment): View
     {
         $workspace = $this->workspace($request);
@@ -300,24 +310,38 @@ class SettingsController extends Controller
             'value' => $current[$key] ?? '',
             'example' => $example[$key] ?? '',
             'comment' => $metadata[$key]['comment'] ?? '',
-            'type' => in_array($key, self::BOOLEAN_KEYS, true) ? 'boolean' : (in_array($key, self::SECRET_KEYS, true) ? 'password' : 'text'),
+            'type' => $this->fieldType($key),
+            'options' => self::OPTION_KEYS[$key] ?? [],
         ])->all();
+    }
+
+    private function fieldType(string $key): string
+    {
+        if (in_array($key, self::BOOLEAN_KEYS, true)) {
+            return 'boolean';
+        }
+
+        if (isset(self::OPTION_KEYS[$key])) {
+            return 'select';
+        }
+
+        return in_array($key, self::SECRET_KEYS, true) ? 'password' : 'text';
     }
 
     private function validateKnownValues(array $values): void
     {
         validator($values, [
-            'APP_ENV' => ['nullable', Rule::in(['local', 'production', 'staging', 'testing'])],
+            'APP_ENV' => ['nullable', Rule::in(self::OPTION_KEYS['APP_ENV'])],
             'APP_URL' => ['nullable', 'url', 'max:255'],
             'APP_TIMEZONE' => ['nullable', 'timezone'],
-            'DB_CONNECTION' => ['nullable', Rule::in(['sqlite', 'mysql', 'pgsql', 'mariadb', 'sqlsrv'])],
+            'DB_CONNECTION' => ['nullable', Rule::in(self::OPTION_KEYS['DB_CONNECTION'])],
             'DB_PORT' => ['nullable', 'integer', 'between:1,65535'],
-            'DB_SSLMODE' => ['nullable', Rule::in(['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'])],
-            'CACHE_STORE' => ['nullable', Rule::in(['array', 'database', 'file', 'memcached', 'redis', 'dynamodb', 'storage', 'octane', 'session', 'failover', 'null'])],
-            'QUEUE_CONNECTION' => ['nullable', Rule::in(['sync', 'database', 'beanstalkd', 'sqs', 'redis', 'deferred', 'background', 'failover', 'null'])],
-            'SESSION_DRIVER' => ['nullable', Rule::in(['file', 'cookie', 'database', 'apc', 'memcached', 'redis', 'dynamodb', 'array'])],
+            'DB_SSLMODE' => ['nullable', Rule::in(self::OPTION_KEYS['DB_SSLMODE'])],
+            'CACHE_STORE' => ['nullable', Rule::in(self::OPTION_KEYS['CACHE_STORE'])],
+            'QUEUE_CONNECTION' => ['nullable', Rule::in(self::OPTION_KEYS['QUEUE_CONNECTION'])],
+            'SESSION_DRIVER' => ['nullable', Rule::in(self::OPTION_KEYS['SESSION_DRIVER'])],
             'REDIS_PORT' => ['nullable', 'integer', 'between:1,65535'],
-            'FILESYSTEM_DISK' => ['nullable', Rule::in(['local', 'public', 's3'])],
+            'FILESYSTEM_DISK' => ['nullable', Rule::in(self::OPTION_KEYS['FILESYSTEM_DISK'])],
             'AWS_URL' => ['nullable', 'url', 'max:500'],
             'AWS_ENDPOINT' => ['nullable', 'url', 'max:500'],
             'WA_WORKER_URL' => ['nullable', 'url', 'max:500'],
@@ -327,7 +351,7 @@ class SettingsController extends Controller
             'WEBHOOK_TIMEOUT' => ['nullable', 'integer', 'min:1', 'max:300'],
             'WEBHOOK_RETRY_ATTEMPTS' => ['nullable', 'integer', 'min:0', 'max:100'],
             'WEBHOOK_RETRY_BACKOFF' => ['nullable', 'regex:/^\d+(,\d+)*$/'],
-        ])->validate();
+        ], [], collect(array_keys($values))->mapWithKeys(fn (string $key) => [$key => $key])->all())->validate();
     }
 
     private function runArtisan(string $command): void

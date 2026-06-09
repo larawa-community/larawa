@@ -14,6 +14,17 @@
             >
             <span>Enabled</span>
         </label>
+    @elseif ($field['type'] === 'select')
+        <select
+            id="env_{{ $field['key'] }}"
+            name="env[{{ $field['key'] }}]"
+            autocomplete="off"
+            class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 shadow-sm focus:border-[#25d366] focus:outline-none focus:ring-2 focus:ring-[#25d366]/20"
+        >
+            @foreach ($field['options'] as $option)
+                <option value="{{ $option }}" @selected(old("env.{$field['key']}", $field['value']) === $option)>{{ $option }}</option>
+            @endforeach
+        </select>
     @else
         <input
             id="env_{{ $field['key'] }}"
