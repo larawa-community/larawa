@@ -39,16 +39,26 @@
                 <div class="border-b border-slate-200 px-5 py-4 font-semibold">Members</div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-5 py-3">User</th><th class="px-5 py-3">Role</th><th class="px-5 py-3">Joined</th></tr></thead>
+                        <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-5 py-3">User</th><th class="px-5 py-3">Role</th><th class="px-5 py-3">Joined</th><th class="px-5 py-3"></th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
                             @forelse ($members as $member)
                                 <tr>
                                     <td class="px-5 py-4"><div class="font-medium">{{ $member->name }}</div><div class="mt-1 text-xs text-slate-500">{{ $member->email }}</div></td>
                                     <td class="px-5 py-4"><span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{{ $member->pivot->role }}</span></td>
                                     <td class="px-5 py-4 text-slate-600">{{ $member->pivot->created_at?->diffForHumans() ?: '-' }}</td>
+                                    <td class="px-5 py-4 text-right">
+                                        @if ($member->is(auth()->user()) && $member->pivot->role === 'site_admin')
+                                            <span class="text-xs font-semibold text-slate-400">Current site admin</span>
+                                        @else
+                                            <form method="POST" action="{{ route('dashboard.users.workspaces.destroy', [$member, $managedWorkspace]) }}" onsubmit="return confirm('Remove this workspace membership?')">
+                                                @csrf @method('DELETE')
+                                                <button class="font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                            </form>
+                                        @endif
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="3" class="px-5 py-8 text-slate-500">No members yet.</td></tr>
+                                <tr><td colspan="4" class="px-5 py-8 text-slate-500">No members yet.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

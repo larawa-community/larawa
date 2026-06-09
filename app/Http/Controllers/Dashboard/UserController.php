@@ -193,6 +193,8 @@ class UserController extends Controller
     {
         $request->user()->can('platform.admin') ?: abort(403);
         $membership = $user->workspaces()->whereKey($membershipWorkspace->id)->first();
+        abort_unless($membership, 404);
+
         $membershipRole = $membership?->pivot?->role;
 
         abort_if($user->is($request->user()) && $membershipRole === 'site_admin', 422, 'You cannot remove your own site admin role.');
@@ -205,6 +207,11 @@ class UserController extends Controller
                     'workspace' => 'The system admin workspace must keep its site admin memberships.',
                 ]);
             }
+        }
+        if ($membershipRole === 'workspace_admin' && $membershipWorkspace->users()->wherePivot('role', 'workspace_admin')->count() <= 1) {
+            throw ValidationException::withMessages([
+                'workspace' => 'A workspace must keep at least one workspace admin.',
+            ]);
         }
 
         $membershipWorkspace->users()->detach($user->id);

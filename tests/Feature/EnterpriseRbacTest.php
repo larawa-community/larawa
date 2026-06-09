@@ -446,6 +446,50 @@ class EnterpriseRbacTest extends TestCase
         $this->assertSame('workspace_user', $agent->fresh()->roleForWorkspace($target));
     }
 
+    public function test_site_admin_can_remove_workspace_member_from_workspace_detail(): void
+    {
+        $workspace = Workspace::create(['name' => 'Platform', 'slug' => 'platform']);
+        $siteAdmin = User::factory()->create();
+        $workspace->users()->attach($siteAdmin, ['role' => 'site_admin']);
+        $target = Workspace::create(['name' => 'North Support', 'slug' => 'north-support']);
+        $admin = User::factory()->create(['name' => 'Workspace Manager', 'email' => 'manager@example.test']);
+        $agent = User::factory()->create(['name' => 'Workspace Agent', 'email' => 'agent@example.test']);
+        $target->users()->attach($admin, ['role' => 'workspace_admin']);
+        $target->users()->attach($agent, ['role' => 'workspace_user']);
+
+        $this->actingAs($siteAdmin)
+            ->get(route('dashboard.workspaces.show', $target))
+            ->assertOk()
+            ->assertSee('Workspace Agent')
+            ->assertSee('Remove');
+
+        $this->actingAs($siteAdmin)
+            ->from(route('dashboard.workspaces.show', $target))
+            ->delete(route('dashboard.users.workspaces.destroy', [$agent, $target]))
+            ->assertRedirect(route('dashboard.workspaces.show', $target));
+
+        $this->assertNull($agent->fresh()->roleForWorkspace($target));
+        $this->assertSame('workspace_admin', $admin->fresh()->roleForWorkspace($target));
+    }
+
+    public function test_site_admin_cannot_remove_last_workspace_admin_membership(): void
+    {
+        $workspace = Workspace::create(['name' => 'Platform', 'slug' => 'platform']);
+        $siteAdmin = User::factory()->create();
+        $workspace->users()->attach($siteAdmin, ['role' => 'site_admin']);
+        $target = Workspace::create(['name' => 'North Support', 'slug' => 'north-support']);
+        $admin = User::factory()->create();
+        $target->users()->attach($admin, ['role' => 'workspace_admin']);
+
+        $this->actingAs($siteAdmin)
+            ->from(route('dashboard.workspaces.show', $target))
+            ->delete(route('dashboard.users.workspaces.destroy', [$admin, $target]))
+            ->assertRedirect(route('dashboard.workspaces.show', $target))
+            ->assertSessionHasErrors('workspace');
+
+        $this->assertSame('workspace_admin', $admin->fresh()->roleForWorkspace($target));
+    }
+
     public function test_site_admin_sees_error_when_workspace_detail_email_does_not_exist(): void
     {
         $workspace = Workspace::create(['name' => 'Platform', 'slug' => 'platform']);
@@ -568,6 +612,7 @@ class EnterpriseRbacTest extends TestCase
             ->get(route('dashboard.workspace-users.index', ['q' => 'north', 'role' => 'workspace_user']))
             ->assertOk()
             ->assertSee('North Agent')
+            ->assertSee('Remove')
             ->assertDontSee('South Agent');
 
         $this->actingAs($admin)

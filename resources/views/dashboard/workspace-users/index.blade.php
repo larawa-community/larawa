@@ -73,11 +73,21 @@
                                 <span class="rounded-full px-3 py-1 text-xs font-semibold {{ $member->disabled_at ? 'bg-red-100 text-red-700' : 'bg-[#25d366]/10 text-[#128c42]' }}">{{ $member->disabled_at ? 'Disabled' : 'Active' }}</span>
                             </td>
                             <td class="px-5 py-4 text-slate-600">{{ $member->pivot->created_at?->diffForHumans() ?: '-' }}</td>
-                            <td class="px-5 py-4 text-right">
+                            <td class="px-5 py-4">
                                 @if ($member->pivot->role === 'site_admin')
-                                    <span class="text-xs font-semibold text-slate-400">Site admin</span>
+                                    <div class="text-right text-xs font-semibold text-slate-400">Site admin</div>
                                 @else
-                                    <a href="{{ route('dashboard.workspace-users.show', $member) }}" class="font-semibold text-[#128c42]">Open</a>
+                                    <div class="flex flex-wrap items-center justify-end gap-3">
+                                        <a href="{{ route('dashboard.workspace-users.show', $member) }}" class="font-semibold text-[#128c42]">Open</a>
+                                        @if ($member->is(auth()->user()))
+                                            <span class="text-xs font-semibold text-slate-400">Current user</span>
+                                        @else
+                                            <form method="POST" action="{{ route('dashboard.workspace-users.destroy', $member) }}" onsubmit="return confirm('Remove this user from the workspace?')">
+                                                @csrf @method('DELETE')
+                                                <button class="font-semibold text-red-700 hover:text-red-800">Remove</button>
+                                            </form>
+                                        @endif
+                                    </div>
                                 @endif
                             </td>
                         </tr>
