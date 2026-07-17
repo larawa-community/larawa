@@ -7,6 +7,7 @@ test('recognizes Puppeteer errors that can happen after WhatsApp accepted a send
   assert.equal(isAmbiguousPuppeteerSendError(new Error('Execution context was destroyed.')), true);
   assert.equal(isAmbiguousPuppeteerSendError(new Error('Target closed')), true);
   assert.equal(isAmbiguousPuppeteerSendError(new Error('Cannot find context with specified id')), true);
+  assert.equal(isAmbiguousPuppeteerSendError(new TypeError("Cannot read properties of undefined (reading 'id')")), true);
 });
 
 test('does not hide definite send failures', () => {

@@ -2627,7 +2627,7 @@ class ExampleTest extends TestCase
         $message = Message::create([
             'workspace_id' => $workspace->id,
             'whatsapp_session_id' => $session->id,
-            'wa_message_id' => 'true_115462444716248@lid_3EB0BE8D24289CC9F2963D',
+            'wa_message_id' => 'true_999000000000011@lid_3EB0SYNTHETICEXISTING',
             'direction' => 'outgoing',
             'type' => 'text',
             'status' => 'pending',
@@ -2641,9 +2641,9 @@ class ExampleTest extends TestCase
                 'event' => 'message.created',
                 'session_id' => $session->uuid,
                 'payload' => [
-                    'message_id' => 'true_115462444716248@lid_3EB0BE8D24289CC9F2963D',
-                    'from' => '59129636901063@lid',
-                    'to' => '115462444716248@lid',
+                    'message_id' => 'true_999000000000011@lid_3EB0SYNTHETICEXISTING',
+                    'from' => '999000000000012@lid',
+                    'to' => '999000000000011@lid',
                     'from_me' => true,
                     'body' => 'Hello from LaraWA',
                     'type' => 'chat',
@@ -2657,10 +2657,61 @@ class ExampleTest extends TestCase
         $message->refresh();
 
         $this->assertSame('12025550100@c.us', $message->to);
-        $this->assertSame('115462444716248@lid', $message->payload['worker_event']['resolved_to']);
+        $this->assertSame('999000000000011@lid', $message->payload['worker_event']['resolved_to']);
         $this->assertSame('12025550100@c.us', $message->payload['worker_event']['requested_to']);
         $this->assertTrue($message->payload['worker_event']['recipient_mismatch']);
         $this->assertSame('pending', $message->status);
+    }
+
+    public function test_worker_created_event_correlates_failed_send_and_synthetic_lid_callback(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $session = WhatsappSession::create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Support',
+            'status' => 'ready',
+        ]);
+        $message = Message::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'direction' => 'outgoing',
+            'type' => 'text',
+            'status' => 'failed',
+            'to' => '12025550199@c.us',
+            'body' => 'Synthetic test message',
+            'payload' => [
+                'type' => 'text',
+                'to' => '12025550199@c.us',
+                'worker_error' => ['message' => "Cannot read properties of undefined (reading 'id')", 'status' => 502],
+            ],
+        ]);
+
+        $this->withToken(config('larawa.worker_token'))
+            ->postJson('/api/internal/worker/events', [
+                'event' => 'message.created',
+                'session_id' => $session->uuid,
+                'payload' => [
+                    'message_id' => 'true_999000000000001@lid_3EB0SYNTHETIC',
+                    'client_message_id' => $message->id,
+                    'from' => '999000000000002@lid',
+                    'to' => '999000000000001@lid',
+                    'from_me' => true,
+                    'body' => 'Synthetic test message',
+                    'type' => 'chat',
+                    'timestamp' => 1784300000,
+                    'has_media' => false,
+                    'is_group' => false,
+                ],
+            ])
+            ->assertOk();
+
+        $message->refresh();
+        $this->assertSame(1, Message::where('workspace_id', $workspace->id)->count());
+        $this->assertSame('true_999000000000001@lid_3EB0SYNTHETIC', $message->wa_message_id);
+        $this->assertSame('pending', $message->status);
+        $this->assertSame('12025550199@c.us', $message->to);
+        $this->assertSame('999000000000001@lid', $message->payload['worker_event']['resolved_to']);
+        $this->assertSame('12025550199@c.us', $message->payload['worker_event']['requested_to']);
     }
 
     public function test_api_can_send_group_text_messages(): void
@@ -3464,14 +3515,14 @@ class ExampleTest extends TestCase
                 'message_id' => null,
                 'delivery_uncertain' => true,
                 'warning' => 'WhatsApp may have accepted the message, but the browser result could not be confirmed.',
-                'requested_to' => '85255555555@c.us',
-                'resolved_to' => '85255555555@c.us',
+                'requested_to' => '12025550199@c.us',
+                'resolved_to' => '12025550199@c.us',
             ], 202),
         ]);
 
         $this->withToken($plainText)
             ->postJson('/api/v1/sessions/'.$session->uuid.'/messages/text', [
-                'to' => '85255555555@c.us',
+                'to' => '12025550199@c.us',
                 'text' => 'Uncertain but possibly sent',
             ])
             ->assertAccepted()
@@ -3985,6 +4036,55 @@ class ExampleTest extends TestCase
             'workspace_id' => $workspace->id,
             'action' => 'dashboard.message.sent',
         ]);
+    }
+
+    public function test_dashboard_preserves_callback_state_for_an_uncertain_send(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $admin = User::factory()->create();
+        $workspace->users()->attach($admin, ['role' => 'workspace_admin']);
+        $session = WhatsappSession::create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Support',
+            'status' => 'ready',
+        ]);
+
+        Http::fake([
+            config('larawa.worker_url').'/internal/sessions/*/send' => function ($request) {
+                Message::findOrFail($request['client_message_id'])->update([
+                    'wa_message_id' => 'true_999000000000001@lid_3EB0RACE',
+                    'status' => 'delivered',
+                    'payload' => ['worker_event' => ['message_id' => 'true_999000000000001@lid_3EB0RACE']],
+                ]);
+
+                return Http::response([
+                    'status' => 'pending',
+                    'message_id' => null,
+                    'delivery_uncertain' => true,
+                    'warning' => 'WhatsApp may have accepted the message, but the browser result could not be confirmed.',
+                    'requested_to' => '12025550199@c.us',
+                    'resolved_to' => '12025550199@c.us',
+                ], 202);
+            },
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('dashboard.sessions.show', $session))
+            ->post(route('dashboard.sessions.test-message', $session), [
+                'to' => '+12025550199',
+                'type' => 'text',
+                'text' => 'Synthetic test message',
+            ])
+            ->assertRedirect(route('dashboard.sessions.show', $session))
+            ->assertSessionHas('status', 'Test message queued for delivery.')
+            ->assertSessionMissing('error');
+
+        $message = Message::where('workspace_id', $workspace->id)->firstOrFail();
+        $this->assertSame('delivered', $message->status);
+        $this->assertSame('true_999000000000001@lid_3EB0RACE', $message->wa_message_id);
+        $this->assertTrue($message->payload['worker_response']['delivery_uncertain']);
+        $this->assertSame('true_999000000000001@lid_3EB0RACE', $message->payload['worker_event']['message_id']);
+        $this->assertArrayNotHasKey('worker_error', $message->payload);
     }
 
     public function test_dashboard_test_message_accepts_international_phone_inputs(): void

@@ -132,11 +132,16 @@ class MessageSender
         $payload = array_merge($this->payloadWithoutWorkerResult($storedPayload), ['worker_response' => $result]);
 
         if (! $messageId) {
+            $message->refresh();
+            $acceptedStatus = $this->workerAcceptedStatus($result);
             $message->update([
-                'wa_message_id' => null,
                 'to' => $this->normalizedRecipient($result, $message),
-                'status' => $this->workerAcceptedStatus($result),
-                'payload' => $payload,
+                'status' => in_array($message->status, ['sent', 'delivered', 'read', 'played'], true)
+                    ? $message->status
+                    : $acceptedStatus,
+                'payload' => array_merge($payload, $this->payloadWithoutWorkerResult($message->payload ?: []), [
+                    'worker_response' => $result,
+                ]),
             ]);
 
             return $message;

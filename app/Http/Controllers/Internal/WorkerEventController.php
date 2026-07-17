@@ -119,6 +119,7 @@ class WorkerEventController extends Controller
             ],
             'message.received', 'message.created' => [
                 'payload.message_id' => ['required', 'string', 'max:255'],
+                'payload.client_message_id' => ['nullable', 'integer', 'min:1'],
                 'payload.from' => ['nullable', 'string', 'max:120'],
                 'payload.to' => ['nullable', 'string', 'max:120'],
                 'payload.author' => ['nullable', 'string', 'max:120'],
@@ -225,6 +226,13 @@ class WorkerEventController extends Controller
                 ->where('wa_message_id', $messageId)
                 ->first()
             : null;
+        if (! $message && $event === 'message.created' && isset($payload['client_message_id'])) {
+            $message = Message::query()
+                ->whereKey($payload['client_message_id'])
+                ->where('workspace_id', $session->workspace_id)
+                ->where('whatsapp_session_id', $session->id)
+                ->first();
+        }
         $isReplay = $message && ($message->payload['worker_event']['message_id'] ?? null) === $messageId;
 
         $direction = $event === 'message.created' || ($payload['from_me'] ?? false) ? 'outgoing' : 'incoming';
@@ -235,7 +243,9 @@ class WorkerEventController extends Controller
             'wa_message_id' => $messageId,
             'direction' => $direction,
             'type' => $message && $message->type !== 'status' ? $message->type : ($payload['type'] ?? 'text'),
-            'status' => $message?->status ?? ($direction === 'outgoing' ? 'pending' : 'received'),
+            'status' => $message && in_array($message->status, ['queued', 'failed'], true) && $direction === 'outgoing'
+                ? 'pending'
+                : ($message?->status ?? ($direction === 'outgoing' ? 'pending' : 'received')),
             'from' => $payload['from'] ?? $message?->from,
             'to' => $this->messageRecipient($message, $direction, $payload),
             'body' => $payload['body'] ?? $message?->body,

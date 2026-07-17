@@ -4,6 +4,7 @@ const ambiguousSendPatterns = [
   /target closed/i,
   /inspected target navigated or closed/i,
   /cannot find context with specified id/i,
+  /cannot read properties of undefined \(reading ['"]id['"]\)/i,
 ];
 
 export function isAmbiguousPuppeteerSendError(error) {

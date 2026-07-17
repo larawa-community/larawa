@@ -6,6 +6,7 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import whatsappWeb from 'whatsapp-web.js';
 import { assertPublicHttpUrl } from './outbound-url.js';
+import { PendingSendTracker } from './pending-send-tracker.js';
 import { isAmbiguousPuppeteerSendError } from './puppeteer-errors.js';
 import { createSessionRegistry } from './registry.js';
 import { serializedId } from './serialization.js';
@@ -409,7 +410,16 @@ async function startSession(sessionId, callbackUrl) {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     },
   });
-  const state = { client, sessionId, callbackUrl: callbackUrl || defaultCallbackUrl, status: 'initializing', qr: null, qrDataUrl: null, readyAt: null };
+  const state = {
+    client,
+    sessionId,
+    callbackUrl: callbackUrl || defaultCallbackUrl,
+    status: 'initializing',
+    qr: null,
+    qrDataUrl: null,
+    readyAt: null,
+    pendingSends: new PendingSendTracker(),
+  };
   clients.set(sessionId, state);
 
   client.on('qr', async (qr) => {
@@ -456,7 +466,10 @@ async function startSession(sessionId, callbackUrl) {
 
   client.on('message_create', async (message) => {
     if (!message.fromMe) return;
-    const payload = await persistMedia(sessionId, message, serializeMessage(message));
+    const serialized = serializeMessage(message);
+    const clientMessageId = state.pendingSends.match(message);
+    if (clientMessageId) serialized.client_message_id = clientMessageId;
+    const payload = await persistMedia(sessionId, message, serialized);
     await emit(sessionId, 'message.created', payload);
   });
 
@@ -654,6 +667,7 @@ app.post('/internal/sessions/:sessionId/send', assertInternal, async (req, res, 
     }
 
     const target = await resolveSendTarget(state.client, payload.to);
+    const trackedSend = state.pendingSends.track(payload.client_message_id, payload, target.resolved_to);
 
     try {
       if (['image', 'video', 'document', 'audio'].includes(payload.type)) {
@@ -667,7 +681,10 @@ app.post('/internal/sessions/:sessionId/send', assertInternal, async (req, res, 
         sent = await state.client.sendMessage(target.resolved_to, payload.text);
       }
     } catch (error) {
-      if (!isAmbiguousPuppeteerSendError(error)) throw error;
+      if (!isAmbiguousPuppeteerSendError(error)) {
+        state.pendingSends.forget(trackedSend);
+        throw error;
+      }
 
       console.warn('send result uncertain', state.sessionId, target.resolved_to, error.message || error);
       return res.status(202).json({
@@ -679,6 +696,7 @@ app.post('/internal/sessions/:sessionId/send', assertInternal, async (req, res, 
       });
     }
 
+    state.pendingSends.forget(trackedSend);
     res.json({ status: 'pending', message_id: serializedId(sent.id), ...target });
   } catch (error) {
     next(error);
