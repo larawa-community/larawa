@@ -20,3 +20,7 @@ export function serializedId(value) {
 
   return null;
 }
+
+export function sentMessageId(result) {
+  return serializedId(result?.id);
+}

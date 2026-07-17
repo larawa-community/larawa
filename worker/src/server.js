@@ -9,7 +9,7 @@ import { assertPublicHttpUrl } from './outbound-url.js';
 import { PendingSendTracker } from './pending-send-tracker.js';
 import { isAmbiguousPuppeteerSendError } from './puppeteer-errors.js';
 import { createSessionRegistry } from './registry.js';
-import { serializedId } from './serialization.js';
+import { sentMessageId, serializedId } from './serialization.js';
 import {
   isValidSessionId,
   mediaResponseError,
@@ -696,8 +696,20 @@ app.post('/internal/sessions/:sessionId/send', assertInternal, async (req, res, 
       });
     }
 
+    const messageId = sentMessageId(sent);
+    if (!messageId) {
+      console.warn('send result uncertain', state.sessionId, target.resolved_to, 'sendMessage returned no message id');
+      return res.status(202).json({
+        status: 'pending',
+        message_id: null,
+        delivery_uncertain: true,
+        warning: 'WhatsApp may have accepted the message, but the browser returned no message id.',
+        ...target,
+      });
+    }
+
     state.pendingSends.forget(trackedSend);
-    res.json({ status: 'pending', message_id: serializedId(sent.id), ...target });
+    return res.json({ status: 'pending', message_id: messageId, ...target });
   } catch (error) {
     next(error);
   }

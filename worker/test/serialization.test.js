@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { serializedId } from '../src/serialization.js';
+import { sentMessageId, serializedId } from '../src/serialization.js';
 
 test('serializes WhatsApp IDs exposed in supported shapes', () => {
   assert.equal(serializedId('12025550199@c.us'), '12025550199@c.us');
@@ -21,4 +21,10 @@ test('reconstructs a message key when _serialized is absent', () => {
 test('returns null for unknown ID shapes', () => {
   assert.equal(serializedId(undefined), null);
   assert.equal(serializedId({}), null);
+});
+
+test('returns null when sendMessage resolves without a result', () => {
+  assert.equal(sentMessageId(undefined), null);
+  assert.equal(sentMessageId({}), null);
+  assert.equal(sentMessageId({ id: { _serialized: 'synthetic-message-id' } }), 'synthetic-message-id');
 });
