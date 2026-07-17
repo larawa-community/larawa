@@ -13,7 +13,7 @@ Start LaraWA:
 
 ```bash
 docker compose up -d --build
-curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost/healthz
 docker compose ps
 ```
 
@@ -46,7 +46,7 @@ The script proves API behavior, worker acceptance, webhook delivery status, and,
 
 ## 1. Login And Create A Session
 
-1. Open `http://localhost:8080`.
+1. Open `http://localhost`.
 2. Login with the configured admin account.
 3. Open `Sessions`.
 4. Create a session named `Live Validation`.
@@ -105,7 +105,7 @@ Expected result:
 ## 5. Send Text Message
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/sessions/{session_uuid}/messages/text \
+curl -X POST http://localhost/api/v1/sessions/{session_uuid}/messages/text \
   -H "Authorization: Bearer ${LARAWA_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"to":"+1 202-555-0100","text":"LaraWA live validation text","idempotency_key":"live-text-001"}'
@@ -122,7 +122,7 @@ Expected result:
 
 ```bash
 IMAGE_BASE64="$(base64 -i ./validation-image.png | tr -d '\n')"
-curl -X POST http://localhost:8080/api/v1/sessions/{session_uuid}/messages/image \
+curl -X POST http://localhost/api/v1/sessions/{session_uuid}/messages/image \
   -H "Authorization: Bearer ${LARAWA_API_KEY}" \
   -H "Content-Type: application/json" \
   -d "{\"to\":\"+1 202-555-0100\",\"media_base64\":\"${IMAGE_BASE64}\",\"mime_type\":\"image/png\",\"filename\":\"validation-image.png\",\"caption\":\"LaraWA live validation image\",\"idempotency_key\":\"live-image-001\"}"
@@ -148,7 +148,7 @@ Use the same session and API key:
 Discover group ids with:
 
 ```bash
-curl http://localhost:8080/api/v1/sessions/{session_uuid}/groups \
+curl http://localhost/api/v1/sessions/{session_uuid}/groups \
   -H "Authorization: Bearer ${LARAWA_API_KEY}"
 ```
 

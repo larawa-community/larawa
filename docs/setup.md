@@ -180,7 +180,7 @@ Leave `AWS_ENDPOINT` blank only for AWS S3. For MinIO, R2-compatible gateways, a
 
 ## API Documentation
 
-Swagger UI is available outside production at `http://localhost:8080/docs`. The raw OpenAPI document lives at `docs/openapi.yaml` and is served from `/docs/openapi.yaml` outside production. When `APP_ENV=production`, both HTTP documentation routes return `404`. The Swagger UI assets are bundled into the LaraWA image, so API docs do not depend on a public CDN at runtime.
+Swagger UI is available outside production at `http://localhost/docs`. The raw OpenAPI document lives at `docs/openapi.yaml` and is served from `/docs/openapi.yaml` outside production. When `APP_ENV=production`, both HTTP documentation routes return `404`. The Swagger UI assets are bundled into the LaraWA image, so API docs do not depend on a public CDN at runtime.
 
 ## Live Session Discovery
 

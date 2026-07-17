@@ -43,7 +43,7 @@ docker compose up -d --build
 Open the dashboard:
 
 ```text
-http://localhost:8080
+http://localhost
 ```
 
 On the first visit, LaraWA will show a one-time setup screen. Use it to create the first workspace and site administrator, configure the app URL, check database/storage settings, and finish the installation.
@@ -89,7 +89,7 @@ Replace:
 ### Send a Text Message
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/sessions/SESSION_UUID/messages/text \
+curl -X POST http://localhost/api/v1/sessions/SESSION_UUID/messages/text \
   -H "Authorization: Bearer lwa_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -101,7 +101,7 @@ curl -X POST http://localhost:8080/api/v1/sessions/SESSION_UUID/messages/text \
 ### Send an Image Message
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/sessions/SESSION_UUID/messages/image \
+curl -X POST http://localhost/api/v1/sessions/SESSION_UUID/messages/image \
   -H "Authorization: Bearer lwa_your_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -141,7 +141,7 @@ You can also send media with `media_base64` instead of `media_url`. See the [Ope
 When running outside production, Swagger UI is available at:
 
 ```text
-http://localhost:8080/docs
+http://localhost/docs
 ```
 
 ## Plugins

@@ -819,7 +819,7 @@ class ExampleTest extends TestCase
             'app.env' => 'production',
             'app.debug' => false,
             'app.key' => '',
-            'app.url' => 'http://localhost:8080',
+            'app.url' => 'http://localhost',
             'logging.channels.single.level' => 'debug',
             'larawa.worker_token' => 'change-me-worker-token',
         ]);

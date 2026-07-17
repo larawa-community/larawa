@@ -4,7 +4,7 @@ info:
   version: 13.0.0
   description: Self-hosted WhatsApp API gateway powered by Laravel and whatsapp-web.js.
 servers:
-  - url: http://localhost:8080/api/v1
+  - url: http://localhost/api/v1
 security:
   - ApiKeyAuth: []
   - ApiKeyHeader: []

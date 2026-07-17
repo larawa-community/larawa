@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${LARAWA_SMOKE_URL:-http://localhost:8080}"
+BASE_URL="${LARAWA_SMOKE_URL:-http://localhost}"
 BASE_URL="${BASE_URL%/}"
 ADMIN_EMAIL="${LARAWA_SMOKE_ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${LARAWA_SMOKE_ADMIN_PASSWORD:-}"

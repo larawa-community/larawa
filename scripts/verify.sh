@@ -142,7 +142,7 @@ wait_for_postgres_compose_health() {
 
 assert_health_connection() {
     local expected_connection="$1"
-    local url="${2:-http://localhost:8080/healthz}"
+    local url="${2:-http://localhost/healthz}"
 
     curl -fsS "$url" | ruby -rjson -e '
         expected = ARGV.fetch(0)
@@ -237,7 +237,7 @@ assert_env_aliases_match_examples() {
 }
 
 assert_security_headers() {
-    local url="${1:-http://localhost:8080/login}"
+    local url="${1:-http://localhost/login}"
 
     curl -fsSI "$url" | ruby -e '
         headers = STDIN.each_line.each_with_object({}) do |line, memo|
@@ -274,7 +274,7 @@ assert_security_headers() {
 }
 
 assert_docs_unavailable() {
-    local base_url="${1:-http://localhost:8080}"
+    local base_url="${1:-http://localhost}"
     local path
 
     for path in /docs /docs/openapi.yaml; do
@@ -332,7 +332,7 @@ if [[ "$COMPOSE_UP" == "1" ]]; then
     run assert_health_connection sqlite
     run assert_security_headers
     run assert_docs_unavailable
-    run env LARAWA_SMOKE_URL="http://localhost:8080" scripts/smoke-dashboard.sh
+    run env LARAWA_SMOKE_URL="http://localhost" scripts/smoke-dashboard.sh
     run docker compose ps
 fi
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${LARAWA_BASE_URL:-http://localhost:8080}"
+BASE_URL="${LARAWA_BASE_URL:-http://localhost}"
 API_KEY="${LARAWA_API_KEY:-}"
 SESSION_UUID="${LARAWA_SESSION_UUID:-}"
 RECIPIENT="${LARAWA_RECIPIENT:-}"
@@ -20,7 +20,7 @@ Usage:
   LARAWA_API_KEY=lwa_... LARAWA_SESSION_UUID=... LARAWA_RECIPIENT='+1 202-555-0100' scripts/live-validate.sh
 
 Environment:
-  LARAWA_BASE_URL              LaraWA URL. Defaults to http://localhost:8080.
+  LARAWA_BASE_URL              LaraWA URL. Defaults to http://localhost.
   LARAWA_API_KEY               API key with sessions:read, messages:send, and messages:read.
                                 Add webhooks:read and webhooks:write when LARAWA_WEBHOOK_ID is set.
   LARAWA_SESSION_UUID          Ready WhatsApp session UUID.
