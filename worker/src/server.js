@@ -513,6 +513,13 @@ function collectionLimit(req) {
   return Math.min(Math.floor(requested), 500);
 }
 
+function rejectUnavailableChatCollection(res) {
+  return res.status(503).json({
+    message: 'Chat and group listing is temporarily unavailable due to an upstream whatsapp-web.js compatibility issue.',
+    upstream_issue: 'https://github.com/wwebjs/whatsapp-web.js/issues/201838',
+  });
+}
+
 app.get('/health', (_req, res) => {
   res.status(isShuttingDown ? 503 : 200).json({ ok: !isShuttingDown, sessions: clients.size });
 });
@@ -577,10 +584,7 @@ app.get('/internal/sessions/:sessionId/chats', assertInternal, async (req, res, 
     const state = readySession(req, res);
     if (!state) return;
 
-    const chats = await state.client.getChats();
-    res.json({
-      data: chats.slice(0, collectionLimit(req)).map(serializeChat),
-    });
+    return rejectUnavailableChatCollection(res);
   } catch (error) {
     next(error);
   }
@@ -608,13 +612,7 @@ app.get('/internal/sessions/:sessionId/groups', assertInternal, async (req, res,
     const state = readySession(req, res);
     if (!state) return;
 
-    const chats = await state.client.getChats();
-    res.json({
-      data: chats
-        .filter((chat) => chat.isGroup)
-        .slice(0, collectionLimit(req))
-        .map(serializeGroup),
-    });
+    return rejectUnavailableChatCollection(res);
   } catch (error) {
     next(error);
   }
