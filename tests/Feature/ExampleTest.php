@@ -3448,6 +3448,42 @@ class ExampleTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_api_keeps_message_pending_when_worker_reports_an_uncertain_send_result(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $session = WhatsappSession::create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Support',
+            'status' => 'ready',
+        ]);
+        [, $plainText] = app(ApiKeyService::class)->create($workspace, 'Messaging key', ['messages:send']);
+
+        Http::fake([
+            config('larawa.worker_url').'/internal/sessions/*/send' => Http::response([
+                'status' => 'pending',
+                'message_id' => null,
+                'delivery_uncertain' => true,
+                'warning' => 'WhatsApp may have accepted the message, but the browser result could not be confirmed.',
+                'requested_to' => '85255555555@c.us',
+                'resolved_to' => '85255555555@c.us',
+            ], 202),
+        ]);
+
+        $this->withToken($plainText)
+            ->postJson('/api/v1/sessions/'.$session->uuid.'/messages/text', [
+                'to' => '85255555555@c.us',
+                'text' => 'Uncertain but possibly sent',
+            ])
+            ->assertAccepted()
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.payload.worker_response.delivery_uncertain', true);
+
+        $message = Message::where('workspace_id', $workspace->id)->firstOrFail();
+        $this->assertSame('pending', $message->status);
+        $this->assertNull($message->wa_message_id);
+        $this->assertArrayNotHasKey('worker_error', $message->payload);
+    }
+
     public function test_api_rejects_invalid_base64_media_without_calling_worker(): void
     {
         Storage::fake('local');

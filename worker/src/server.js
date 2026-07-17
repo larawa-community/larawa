@@ -6,7 +6,9 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import whatsappWeb from 'whatsapp-web.js';
 import { assertPublicHttpUrl } from './outbound-url.js';
+import { isAmbiguousPuppeteerSendError } from './puppeteer-errors.js';
 import { createSessionRegistry } from './registry.js';
+import { serializedId } from './serialization.js';
 import {
   isValidSessionId,
   mediaResponseError,
@@ -109,6 +111,22 @@ function shouldRetryCallback(error) {
   return !error.response || error.response.status >= 500;
 }
 
+function callbackErrorSummary(error) {
+  const data = error.response?.data;
+  if (!data) return null;
+
+  if (typeof data === 'string') return data.slice(0, 2000);
+
+  try {
+    return JSON.stringify({
+      message: data.message,
+      errors: data.errors,
+    }).slice(0, 2000);
+  } catch {
+    return null;
+  }
+}
+
 async function removeIfExists(filePath) {
   try {
     await fs.rm(filePath, { force: true });
@@ -171,7 +189,8 @@ async function emit(sessionId, event, payload = {}) {
     } catch (error) {
       const status = error.response?.status || error.message;
       if (attempt >= callbackAttempts || !shouldRetryCallback(error)) {
-        console.error('callback failed', sessionId, event, status);
+        const summary = callbackErrorSummary(error);
+        console.error('callback failed', sessionId, event, status, ...(summary ? [summary] : []));
         return;
       }
 
@@ -182,22 +201,20 @@ async function emit(sessionId, event, payload = {}) {
 }
 
 function serializeMessage(message) {
+  const from = serializedId(message.from);
+
   return {
-    message_id: message.id?._serialized,
-    from: message.from,
-    to: message.to,
-    author: message.author,
+    message_id: serializedId(message.id),
+    from,
+    to: serializedId(message.to),
+    author: serializedId(message.author),
     from_me: message.fromMe,
     body: message.body,
     type: message.type,
     timestamp: message.timestamp,
     has_media: message.hasMedia,
-    is_group: Boolean(message.from && message.from.endsWith('@g.us')),
+    is_group: Boolean(from && from.endsWith('@g.us')),
   };
-}
-
-function serializedId(value) {
-  return value?._serialized || value?.serialized || value || null;
 }
 
 function httpError(message, statusCode = 500) {
@@ -445,7 +462,7 @@ async function startSession(sessionId, callbackUrl) {
 
   client.on('message_ack', (message, ack) => {
     emit(sessionId, 'message.status', {
-      message_id: message.id?._serialized,
+      message_id: serializedId(message.id),
       status: ackToStatus(ack),
       ack,
     });
@@ -453,7 +470,7 @@ async function startSession(sessionId, callbackUrl) {
 
   client.on('message_reaction', (reaction) => {
     emit(sessionId, 'message.reaction', {
-      message_id: reaction.msgId?._serialized,
+      message_id: serializedId(reaction.msgId),
       reaction: reaction.reaction,
       sender: reaction.senderId,
       timestamp: reaction.timestamp,
@@ -638,18 +655,31 @@ app.post('/internal/sessions/:sessionId/send', assertInternal, async (req, res, 
 
     const target = await resolveSendTarget(state.client, payload.to);
 
-    if (['image', 'video', 'document', 'audio'].includes(payload.type)) {
-      const media = await buildMedia(payload);
-      sent = await state.client.sendMessage(target.resolved_to, media, {
-        caption: payload.caption,
-        sendAudioAsVoice: payload.type === 'audio' && payload.as_voice === true,
-        sendMediaAsDocument: payload.type === 'document',
+    try {
+      if (['image', 'video', 'document', 'audio'].includes(payload.type)) {
+        const media = await buildMedia(payload);
+        sent = await state.client.sendMessage(target.resolved_to, media, {
+          caption: payload.caption,
+          sendAudioAsVoice: payload.type === 'audio' && payload.as_voice === true,
+          sendMediaAsDocument: payload.type === 'document',
+        });
+      } else {
+        sent = await state.client.sendMessage(target.resolved_to, payload.text);
+      }
+    } catch (error) {
+      if (!isAmbiguousPuppeteerSendError(error)) throw error;
+
+      console.warn('send result uncertain', state.sessionId, target.resolved_to, error.message || error);
+      return res.status(202).json({
+        status: 'pending',
+        message_id: null,
+        delivery_uncertain: true,
+        warning: 'WhatsApp may have accepted the message, but the browser result could not be confirmed.',
+        ...target,
       });
-    } else {
-      sent = await state.client.sendMessage(target.resolved_to, payload.text);
     }
 
-    res.json({ status: 'pending', message_id: sent.id?._serialized, ...target });
+    res.json({ status: 'pending', message_id: serializedId(sent.id), ...target });
   } catch (error) {
     next(error);
   }
