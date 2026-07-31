@@ -222,6 +222,8 @@ https://your-larawa-host.example/api/meta/whatsapp/webhook/{session-uuid}
 
 After Meta accepts the callback URL and generated token, enter the WABA ID, phone number ID, long-lived system-user access token, and app secret on the LaraWA session page. Saving validates these settings through Graph API and discovers the display phone number from Meta; users do not enter the display phone number. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY`; access tokens and app secrets are never returned by the API.
 
+The access token and phone number ID authorize and address Graph API message sends. The Meta App Secret is not sent to the `/messages` endpoint; LaraWA uses it locally to validate the `X-Hub-Signature-256` attached to webhook requests. Find the App Secret in **Meta App Dashboard → App settings → Basic**. It belongs to the Meta app, while LaraWA stores an encrypted copy on each Official session so callbacks remain session-scoped.
+
 Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
 
 Outbound webhook delivery retries are controlled by `WEBHOOK_RETRY_ATTEMPTS` and comma-separated `WEBHOOK_RETRY_BACKOFF` seconds. LaraWA retries network failures, HTTP 408, 429, and 5xx responses until the configured attempt limit is reached, then marks the delivery `exhausted`. Permanent 4xx responses stay failed so invalid endpoints or payload contracts do not create noisy retry loops.

@@ -11,6 +11,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (! Schema::hasColumn('whatsapp_cloud_configs', 'verify_token')) {
+            Schema::table('whatsapp_cloud_configs', function (Blueprint $table) {
+                $table->text('verify_token')->nullable()->after('app_secret');
+            });
+        }
+
         Schema::table('whatsapp_cloud_configs', function (Blueprint $table) {
             $table->string('waba_id')->nullable()->change();
             $table->string('phone_number_id')->nullable()->change();
@@ -19,6 +25,17 @@ return new class extends Migration
         });
 
         $now = now();
+        DB::table('whatsapp_cloud_configs')
+            ->select('id')
+            ->whereNull('verify_token')
+            ->orderBy('id')
+            ->eachById(function ($config) use ($now) {
+                DB::table('whatsapp_cloud_configs')->where('id', $config->id)->update([
+                    'verify_token' => Crypt::encryptString(Str::random(64)),
+                    'updated_at' => $now,
+                ]);
+            });
+
         DB::table('whatsapp_sessions')
             ->where('type', 'official_cloud_api')
             ->whereNotExists(function ($query) {
@@ -39,6 +56,10 @@ return new class extends Migration
                     'updated_at' => $now,
                 ]);
             });
+
+        Schema::table('whatsapp_cloud_configs', function (Blueprint $table) {
+            $table->text('verify_token')->nullable(false)->change();
+        });
     }
 
     public function down(): void
