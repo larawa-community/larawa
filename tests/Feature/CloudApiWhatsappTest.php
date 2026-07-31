@@ -38,6 +38,7 @@ class CloudApiWhatsappTest extends TestCase
             'phone_number_id' => 'phone-api',
             'access_token' => 'api-cloud-token',
             'app_secret' => 'api-app-secret',
+            'verify_token' => 'api-verify-token-1234',
         ]);
 
         $response->assertCreated()
@@ -60,9 +61,11 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertSame(WhatsappSession::TYPE_WRAPPER, $wrapper->type);
         $this->assertNotSame('cloud-token', $raw->access_token);
         $this->assertNotSame('app-secret', $raw->app_secret);
+        $this->assertNotSame('verify-token-1234', $raw->verify_token);
         $this->assertSame('cloud-token', $cloud->cloudConfig->access_token);
         $this->assertArrayNotHasKey('access_token', $cloud->cloudConfig->toArray());
         $this->assertArrayNotHasKey('app_secret', $cloud->cloudConfig->toArray());
+        $this->assertArrayNotHasKey('verify_token', $cloud->cloudConfig->toArray());
     }
 
     public function test_cloud_transport_sends_text_templates_reactions_and_media_links(): void
@@ -171,11 +174,10 @@ class CloudApiWhatsappTest extends TestCase
 
     public function test_meta_webhook_verification_signature_processing_and_retry_deduplication(): void
     {
-        config(['larawa.meta.webhook_verify_token' => 'verify-me']);
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
-        $this->cloudSession($workspace);
+        $cloud = $this->cloudSession($workspace);
 
-        $this->get('/api/meta/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=12345')
+        $this->get('/api/meta/whatsapp/webhook/'.$cloud->uuid.'?hub.mode=subscribe&hub.verify_token=verify-token-1234&hub.challenge=12345')
             ->assertOk()
             ->assertSeeText('12345');
 
@@ -204,7 +206,7 @@ class CloudApiWhatsappTest extends TestCase
         $signature = 'sha256='.hash_hmac('sha256', $raw, 'app-secret');
 
         for ($i = 0; $i < 2; $i++) {
-            $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+            $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_HUB_SIGNATURE_256' => $signature,
             ], $raw)->assertOk();
@@ -225,16 +227,16 @@ class CloudApiWhatsappTest extends TestCase
     public function test_meta_webhook_rejects_bad_signature_and_acknowledges_unknown_phone_number(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
-        $this->cloudSession($workspace);
+        $cloud = $this->cloudSession($workspace);
         $knownRaw = json_encode($this->webhookPayload('phone-1'));
         $unknownRaw = json_encode($this->webhookPayload('not-configured'));
 
-        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256=bad',
         ], $knownRaw)->assertUnauthorized();
 
-        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], ['CONTENT_TYPE' => 'application/json'], $unknownRaw)->assertOk();
+        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], ['CONTENT_TYPE' => 'application/json'], $unknownRaw)->assertOk();
         $this->assertDatabaseCount('meta_webhook_receipts', 0);
     }
 
@@ -261,7 +263,7 @@ class CloudApiWhatsappTest extends TestCase
         ];
         $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
 
-        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
         ], $raw)->assertOk();
@@ -285,6 +287,7 @@ class CloudApiWhatsappTest extends TestCase
             'phone_number_id' => 'phone-1',
             'access_token' => 'cloud-token',
             'app_secret' => 'app-secret',
+            'verify_token' => 'verify-token-1234',
         ]);
 
         return $session->load('cloudConfig');

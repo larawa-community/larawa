@@ -106,6 +106,7 @@
                         <input name="phone_number_id" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="access_token" type="password" autocomplete="new-password" placeholder="System-user access token" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="app_secret" type="password" autocomplete="new-password" placeholder="Meta app secret" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="verify_token" type="password" autocomplete="new-password" placeholder="Webhook verify token (16+ characters)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                     </div>
                     <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
                 </form>

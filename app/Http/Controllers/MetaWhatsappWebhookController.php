@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessMetaWhatsappWebhook;
 use App\Models\MetaWebhookReceipt;
-use App\Models\WhatsappCloudConfig;
+use App\Models\WhatsappSession;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,9 +13,10 @@ use Illuminate\Support\Facades\Log;
 
 class MetaWhatsappWebhookController extends Controller
 {
-    public function verify(Request $request): Response
+    public function verify(Request $request, WhatsappSession $session): Response
     {
-        $token = (string) config('larawa.meta.webhook_verify_token');
+        abort_unless($session->isCloudApi() && $session->cloudConfig, 404);
+        $token = (string) $session->cloudConfig->verify_token;
         $provided = (string) $request->query('hub_verify_token', $request->query('hub.verify_token', ''));
         $mode = (string) $request->query('hub_mode', $request->query('hub.mode', ''));
         $challenge = (string) $request->query('hub_challenge', $request->query('hub.challenge', ''));
@@ -27,8 +28,9 @@ class MetaWhatsappWebhookController extends Controller
         return response('Invalid webhook verification token.', 403);
     }
 
-    public function receive(Request $request): JsonResponse
+    public function receive(Request $request, WhatsappSession $session): JsonResponse
     {
+        abort_unless($session->isCloudApi() && $session->cloudConfig, 404);
         $raw = $request->getContent();
         if (strlen($raw) > 3 * 1024 * 1024) {
             return response()->json(['message' => 'WhatsApp webhook payload exceeds Meta\'s 3 MB limit.'], 413);
@@ -39,19 +41,18 @@ class MetaWhatsappWebhookController extends Controller
         }
 
         $phoneIds = $this->phoneNumberIds($payload);
-        $configs = WhatsappCloudConfig::query()->whereIn('phone_number_id', $phoneIds)->get();
-        if ($configs->isEmpty()) {
-            Log::notice('Meta WhatsApp webhook referenced no configured phone number.', ['phone_number_ids' => $phoneIds]);
+        if (! in_array($session->cloudConfig->phone_number_id, $phoneIds, true)) {
+            Log::notice('Meta WhatsApp webhook did not match the callback session phone number ID.', [
+                'session_uuid' => $session->uuid,
+                'phone_number_ids' => $phoneIds,
+            ]);
 
             return response()->json(['ok' => true]);
         }
 
         $signature = (string) $request->header('X-Hub-Signature-256');
-        $valid = $configs->contains(function (WhatsappCloudConfig $config) use ($signature, $raw): bool {
-            $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $config->app_secret);
-
-            return $signature !== '' && hash_equals($expected, $signature);
-        });
+        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $session->cloudConfig->app_secret);
+        $valid = $signature !== '' && hash_equals($expected, $signature);
         if (! $valid) {
             return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }

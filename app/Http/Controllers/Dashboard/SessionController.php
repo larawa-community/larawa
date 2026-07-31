@@ -57,6 +57,7 @@ class SessionController extends Controller
             'phone_number_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120', 'unique:whatsapp_cloud_configs,phone_number_id'],
             'access_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
             'app_secret' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
+            'verify_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'min:16'],
         ]);
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $workspace);
@@ -82,6 +83,7 @@ class SessionController extends Controller
                 'phone_number_id' => $data['phone_number_id'],
                 'access_token' => $data['access_token'],
                 'app_secret' => $data['app_secret'],
+                'verify_token' => $data['verify_token'],
             ]);
         }
 
@@ -141,6 +143,7 @@ class SessionController extends Controller
             'phone_number_id' => ['nullable', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'access_token' => ['nullable', 'string'],
             'app_secret' => ['nullable', 'string'],
+            'verify_token' => ['nullable', 'string', 'min:16'],
         ]);
 
         if ($session->isWrapper()) {
@@ -157,6 +160,7 @@ class SessionController extends Controller
                 'phone_number_id' => $data['phone_number_id'] ?? null,
                 'access_token' => $data['access_token'] ?? null,
                 'app_secret' => $data['app_secret'] ?? null,
+                'verify_token' => $data['verify_token'] ?? null,
             ], fn ($value) => filled($value));
             if ($credentials !== []) {
                 $session->cloudConfig()->update($credentials);

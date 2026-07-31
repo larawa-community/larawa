@@ -56,7 +56,6 @@ class SettingsController extends Controller
                     'keys' => [
                         'META_GRAPH_API_URL',
                         'META_GRAPH_API_VERSION',
-                        'META_WHATSAPP_WEBHOOK_VERIFY_TOKEN',
                         'META_WHATSAPP_TIMEOUT',
                     ],
                 ],
@@ -149,7 +148,6 @@ class SettingsController extends Controller
         'REDIS_PASSWORD',
         'MAIL_PASSWORD',
         'WA_WORKER_INTERNAL_TOKEN',
-        'META_WHATSAPP_WEBHOOK_VERIFY_TOKEN',
         'AWS_ACCESS_KEY_ID',
         'AWS_SECRET_ACCESS_KEY',
     ];

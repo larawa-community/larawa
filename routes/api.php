@@ -54,5 +54,5 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
 
 Route::post('/internal/worker/events', WorkerEventController::class)->middleware('internal.worker');
 
-Route::get('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'verify']);
-Route::post('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'receive']);
+Route::get('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'verify']);
+Route::post('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'receive']);

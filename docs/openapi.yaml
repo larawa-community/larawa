@@ -214,6 +214,7 @@ paths:
                 phone_number_id: { type: string, description: Required and globally unique for Official Cloud API sessions. }
                 access_token: { type: string, description: Required Official system-user access token; encrypted and never returned. }
                 app_secret: { type: string, description: Required Meta app secret used for webhook signatures; encrypted and never returned. }
+                verify_token: { type: string, minLength: 16, description: Required per-session webhook verification token; encrypted and never returned. }
       responses:
         "201": { description: Session created and its configured provider initialized or validated }
   /sessions/{session}:
@@ -238,6 +239,7 @@ paths:
                 phone_number_id: { type: string }
                 access_token: { type: string }
                 app_secret: { type: string }
+                verify_token: { type: string, minLength: 16 }
       responses:
         "200": { description: Session settings updated }
     get:

@@ -214,13 +214,13 @@ Webhook signing secrets are encrypted at rest when `APP_KEY` is configured. Exis
 
 ## Official Meta WhatsApp Cloud API
 
-Set `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN` to a long random value and keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. Configure this callback URL in each Meta app and subscribe the WhatsApp Business Account to the `messages` field:
+Keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. Each Official session has its own encrypted webhook verify token. Configure the callback URL shown on that session's dashboard page in its Meta app and subscribe the WhatsApp Business Account to the `messages` field:
 
 ```text
-https://your-larawa-host.example/api/meta/whatsapp/webhook
+https://your-larawa-host.example/api/meta/whatsapp/webhook/{session-uuid}
 ```
 
-Create an **Official Cloud API** session with its WABA ID, phone number ID, long-lived system-user access token, and app secret. Access tokens and app secrets are encrypted with `APP_KEY` and are never returned by the API.
+Create an **Official Cloud API** session with its Meta app settings: WABA ID, phone number ID, long-lived system-user access token, app secret, and a verify token of your choosing. LaraWA discovers the display phone number from Meta; users do not enter it. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY` and are never returned by the API.
 
 Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
 

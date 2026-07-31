@@ -124,9 +124,10 @@
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="access_token" type="password" placeholder="New access token (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="app_secret" type="password" placeholder="New app secret (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="verify_token" type="password" placeholder="New verify token (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <div class="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-                            <div>Callback URL: <span class="break-all font-mono">{{ url('/api/meta/whatsapp/webhook') }}</span></div>
-                            <div class="mt-2">Verify token: configure <code>META_WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> and enter the same value in Meta.</div>
+                            <div>Callback URL: <span class="break-all font-mono">{{ url('/api/meta/whatsapp/webhook/'.$session->uuid) }}</span></div>
+                            <div class="mt-2">Use this session's saved verify token in Meta App Dashboard.</div>
                         </div>
                     @endif
                     <button class="rounded-md bg-[#128c42] px-3 py-2 text-sm font-semibold text-white">Save settings</button>

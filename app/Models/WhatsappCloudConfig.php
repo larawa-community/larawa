@@ -10,9 +10,9 @@ use Illuminate\Support\Facades\Crypt;
 
 class WhatsappCloudConfig extends Model
 {
-    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'access_token', 'app_secret'];
+    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'access_token', 'app_secret', 'verify_token'];
 
-    protected $hidden = ['access_token', 'app_secret'];
+    protected $hidden = ['access_token', 'app_secret', 'verify_token'];
 
     public function whatsappSession(): BelongsTo
     {
@@ -25,6 +25,11 @@ class WhatsappCloudConfig extends Model
     }
 
     protected function appSecret(): Attribute
+    {
+        return $this->encryptedAttribute();
+    }
+
+    protected function verifyToken(): Attribute
     {
         return $this->encryptedAttribute();
     }

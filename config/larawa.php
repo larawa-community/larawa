@@ -27,7 +27,6 @@ return [
     'meta' => [
         'graph_url' => rtrim(env('META_GRAPH_API_URL', 'https://graph.facebook.com'), '/'),
         'graph_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
-        'webhook_verify_token' => env('META_WHATSAPP_WEBHOOK_VERIFY_TOKEN'),
         'timeout' => (int) env('META_WHATSAPP_TIMEOUT', 30),
     ],
     'api_rate_limit_per_minute' => (int) env('API_RATE_LIMIT_PER_MINUTE', 120),

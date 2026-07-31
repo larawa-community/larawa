@@ -20,6 +20,7 @@ return new class extends Migration
             $table->string('phone_number_id')->unique();
             $table->text('access_token');
             $table->text('app_secret');
+            $table->text('verify_token');
             $table->timestamps();
         });
 

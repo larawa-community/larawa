@@ -34,7 +34,6 @@ x-larawa-app-env: &larawa-app-env
   WA_WORKER_CALLBACK_URL: http://nginx/api/internal/worker/events
   META_GRAPH_API_URL: ${META_GRAPH_API_URL:-https://graph.facebook.com}
   META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
-  META_WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${META_WHATSAPP_WEBHOOK_VERIFY_TOKEN:-change-me-meta-webhook-token}
   META_WHATSAPP_TIMEOUT: ${META_WHATSAPP_TIMEOUT:-30}
   LARAWA_ENV_PATH: /var/www/html/storage/app/larawa/.env
   API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-120}

@@ -70,6 +70,7 @@ class SessionController extends Controller
             'phone_number_id' => ['sometimes', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'access_token' => ['sometimes', 'string'],
             'app_secret' => ['sometimes', 'string'],
+            'verify_token' => ['sometimes', 'string', 'min:16'],
         ]);
 
         if (array_key_exists('fallback_session_uuid', $data)) {
@@ -212,6 +213,7 @@ class SessionController extends Controller
             'phone_number_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120', 'unique:whatsapp_cloud_configs,phone_number_id'],
             'access_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
             'app_secret' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
+            'verify_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'min:16'],
         ];
     }
 
@@ -238,6 +240,7 @@ class SessionController extends Controller
             'phone_number_id' => $data['phone_number_id'] ?? null,
             'access_token' => $data['access_token'] ?? null,
             'app_secret' => $data['app_secret'] ?? null,
+            'verify_token' => $data['verify_token'] ?? null,
         ];
     }
 
