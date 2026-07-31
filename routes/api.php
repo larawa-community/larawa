@@ -8,11 +8,13 @@ use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WebhookDeliveryController;
 use App\Http\Controllers\Internal\WorkerEventController;
 use App\Http\Controllers\MessageMediaController;
+use App\Http\Controllers\MetaWhatsappWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function () {
     Route::get('/sessions', [SessionController::class, 'index'])->middleware('api.key:sessions:read');
     Route::post('/sessions', [SessionController::class, 'store'])->middleware('api.key:sessions:write');
+    Route::patch('/sessions/{session}', [SessionController::class, 'update'])->middleware('api.key:sessions:write');
     Route::get('/sessions/{session}', [SessionController::class, 'show'])->middleware('api.key:sessions:read');
     Route::get('/sessions/{session}/chats', [SessionDiscoveryController::class, 'chats'])->middleware('api.key:sessions:read');
     Route::get('/sessions/{session}/contacts', [SessionDiscoveryController::class, 'contacts'])->middleware('api.key:sessions:read');
@@ -31,6 +33,7 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
     Route::post('/sessions/{session}/messages/document', [MessageController::class, 'sendDocument'])->middleware('api.key:messages:send');
     Route::post('/sessions/{session}/messages/audio', [MessageController::class, 'sendAudio'])->middleware('api.key:messages:send');
     Route::post('/sessions/{session}/messages/reaction', [MessageController::class, 'sendReaction'])->middleware('api.key:messages:send');
+    Route::post('/sessions/{session}/messages/template', [MessageController::class, 'sendTemplate'])->middleware('api.key:messages:send');
     Route::post('/sessions/{session}/messages/bulk', [MessageController::class, 'bulk'])->middleware('api.key:messages:send');
 
     Route::get('/webhooks', [WebhookController::class, 'index'])->middleware('api.key:webhooks:read');
@@ -50,3 +53,6 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
 });
 
 Route::post('/internal/worker/events', WorkerEventController::class)->middleware('internal.worker');
+
+Route::get('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'verify']);
+Route::post('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'receive']);

@@ -24,6 +24,12 @@ return [
     'worker_url' => rtrim(env('WA_WORKER_URL', 'http://127.0.0.1:3001'), '/'),
     'worker_token' => env('WA_WORKER_INTERNAL_TOKEN', 'change-me-worker-token'),
     'worker_callback_url' => env('WA_WORKER_CALLBACK_URL', env('APP_URL').'/internal/worker/events'),
+    'meta' => [
+        'graph_url' => rtrim(env('META_GRAPH_API_URL', 'https://graph.facebook.com'), '/'),
+        'graph_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
+        'webhook_verify_token' => env('META_WHATSAPP_WEBHOOK_VERIFY_TOKEN'),
+        'timeout' => (int) env('META_WHATSAPP_TIMEOUT', 30),
+    ],
     'api_rate_limit_per_minute' => (int) env('API_RATE_LIMIT_PER_MINUTE', 120),
     'webhook_timeout' => (int) env('WEBHOOK_TIMEOUT', 10),
     'webhook_retry_attempts' => (int) env('WEBHOOK_RETRY_ATTEMPTS', 3),

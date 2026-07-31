@@ -83,17 +83,47 @@ class MessageController extends Controller
     public function sendReaction(Request $request, WhatsappSession $session, MessageSender $sender, AuditLogger $audit): JsonResponse
     {
         $data = $request->validate([
+            'to' => $this->recipientRules(false),
             'message_id' => ['required', 'string'],
             'reaction' => ['required', 'string', 'max:16'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
 
+        if ($session->isCloudApi() && ! filled($data['to'] ?? null)) {
+            throw ValidationException::withMessages(['to' => 'The to field is required for Official Cloud API reactions.']);
+        }
+
         return $this->send($request, $session, $sender, $audit, [
             'type' => 'reaction',
+            'to' => $data['to'] ?? null,
             'message_id' => $data['message_id'],
             'reaction' => $data['reaction'],
             'idempotency_key' => $data['idempotency_key'] ?? null,
         ]);
+    }
+
+    public function sendTemplate(Request $request, WhatsappSession $session, MessageSender $sender, AuditLogger $audit): JsonResponse
+    {
+        if (! $session->isCloudApi()) {
+            return response()->json(['message' => 'Template messages are only available for Official Cloud API sessions.'], 422);
+        }
+
+        $data = $request->validate([
+            'to' => $this->recipientRules(),
+            'name' => ['required', 'string', 'max:512'],
+            'language' => ['required', 'string', 'max:35'],
+            'components' => ['nullable', 'array'],
+            'idempotency_key' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        return $this->send($request, $session, $sender, $audit, array_filter([
+            'type' => 'template',
+            'to' => $data['to'],
+            'name' => $data['name'],
+            'language' => $data['language'],
+            'components' => $data['components'] ?? null,
+            'idempotency_key' => $data['idempotency_key'] ?? null,
+        ], fn ($value) => $value !== null));
     }
 
     public function bulk(Request $request, WhatsappSession $session, MessageSender $sender, AuditLogger $audit, OutboundUrlGuard $urlGuard): JsonResponse
@@ -303,10 +333,10 @@ class MessageController extends Controller
         }
     }
 
-    private function recipientRules(): array
+    private function recipientRules(bool $required = true): array
     {
         return [
-            'required',
+            $required ? 'required' : 'nullable',
             'string',
             'max:80',
             function (string $attribute, mixed $value, callable $fail): void {

@@ -102,6 +102,7 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
 
         Route::get('/sessions', [SessionController::class, 'index'])->name('.sessions.index');
         Route::post('/sessions', [SessionController::class, 'store'])->name('.sessions.store');
+        Route::patch('/sessions/{session}', [SessionController::class, 'update'])->name('.sessions.update');
         Route::get('/sessions/{session}', [SessionController::class, 'show'])->name('.sessions.show');
         Route::get('/sessions/{session}/snapshot', [SessionController::class, 'snapshot'])->name('.sessions.snapshot');
         Route::post('/sessions/{session}/refresh', [SessionController::class, 'refresh'])->name('.sessions.refresh');

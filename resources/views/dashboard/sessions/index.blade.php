@@ -30,6 +30,7 @@
                     <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                         <tr>
                             <th class="px-5 py-3">Name</th>
+                            <th class="px-5 py-3">Type</th>
                             @if ($isSiteAdmin)
                                 <th class="px-5 py-3">Workspace</th>
                             @endif
@@ -46,6 +47,7 @@
                             @endphp
                             <tr>
                                 <td class="px-5 py-4 font-medium">{{ $session->name }}</td>
+                                <td class="px-5 py-4"><span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{{ $session->isCloudApi() ? 'Official Cloud API' : 'WhatsApp Wrapper' }}</span></td>
                                 @if ($isSiteAdmin)
                                     <td class="px-5 py-4">
                                         <div class="font-medium text-slate-700">{{ $session->workspace?->name ?: '-' }}</div>
@@ -66,7 +68,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="{{ $isSiteAdmin ? 6 : 5 }}" class="px-5 py-8 text-slate-500">No sessions match the current filters.</td></tr>
+                            <tr><td colspan="{{ $isSiteAdmin ? 7 : 6 }}" class="px-5 py-8 text-slate-500">No sessions match the current filters.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -82,6 +84,29 @@
                         <span class="mb-1 block text-sm font-medium text-slate-700">Session name</span>
                         <input name="name" required maxlength="120" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/20" placeholder="Support line">
                     </label>
+                    <label class="block">
+                        <span class="mb-1 block text-sm font-medium text-slate-700">Session type</span>
+                        <select name="type" class="w-full rounded-md border border-slate-300 px-3 py-2">
+                            <option value="whatsapp_wrapper">WhatsApp Wrapper</option>
+                            <option value="official_cloud_api">Official Cloud API</option>
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="mb-1 block text-sm font-medium text-slate-700">Official fallback (Wrapper only)</span>
+                        <select name="fallback_session_uuid" class="w-full rounded-md border border-slate-300 px-3 py-2">
+                            <option value="">No automatic fallback</option>
+                            @foreach ($cloudSessions as $cloudSession)
+                                <option value="{{ $cloudSession->uuid }}">{{ $cloudSession->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <div class="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <p class="text-xs text-slate-500">Required only for Official Cloud API sessions. Secrets are encrypted at rest.</p>
+                        <input name="waba_id" placeholder="WABA ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="phone_number_id" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="access_token" type="password" autocomplete="new-password" placeholder="System-user access token" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="app_secret" type="password" autocomplete="new-password" placeholder="Meta app secret" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                    </div>
                     <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
                 </form>
             </section>

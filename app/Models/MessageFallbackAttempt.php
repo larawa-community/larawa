@@ -11,9 +11,11 @@ class MessageFallbackAttempt extends Model
         'workspace_id',
         'message_id',
         'whatsapp_session_id',
+        'target_whatsapp_session_id',
         'plugin_id',
         'provider_key',
         'channel',
+        'provider_message_id',
         'status',
         'failure_reason',
         'trigger_source',
@@ -45,5 +47,10 @@ class MessageFallbackAttempt extends Model
     public function whatsappSession(): BelongsTo
     {
         return $this->belongsTo(WhatsappSession::class);
+    }
+
+    public function targetWhatsappSession(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappSession::class, 'target_whatsapp_session_id');
     }
 }

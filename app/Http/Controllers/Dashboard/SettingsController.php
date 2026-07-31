@@ -52,6 +52,15 @@ class SettingsController extends Controller
                     ],
                 ],
                 [
+                    'label' => 'Official Meta Cloud API',
+                    'keys' => [
+                        'META_GRAPH_API_URL',
+                        'META_GRAPH_API_VERSION',
+                        'META_WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+                        'META_WHATSAPP_TIMEOUT',
+                    ],
+                ],
+                [
                     'label' => 'Limits and Policies',
                     'keys' => [
                         'API_RATE_LIMIT_PER_MINUTE',
@@ -140,6 +149,7 @@ class SettingsController extends Controller
         'REDIS_PASSWORD',
         'MAIL_PASSWORD',
         'WA_WORKER_INTERNAL_TOKEN',
+        'META_WHATSAPP_WEBHOOK_VERIFY_TOKEN',
         'AWS_ACCESS_KEY_ID',
         'AWS_SECRET_ACCESS_KEY',
     ];
@@ -346,6 +356,9 @@ class SettingsController extends Controller
             'AWS_ENDPOINT' => ['nullable', 'url', 'max:500'],
             'WA_WORKER_URL' => ['nullable', 'url', 'max:500'],
             'WA_WORKER_CALLBACK_URL' => ['nullable', 'url', 'max:500'],
+            'META_GRAPH_API_URL' => ['nullable', 'url', 'max:500'],
+            'META_GRAPH_API_VERSION' => ['nullable', 'regex:/^v\d+\.0$/'],
+            'META_WHATSAPP_TIMEOUT' => ['nullable', 'integer', 'min:1', 'max:300'],
             'API_RATE_LIMIT_PER_MINUTE' => ['nullable', 'integer', 'min:1', 'max:100000'],
             'LARAWA_MEDIA_BASE64_MAX_BYTES' => ['nullable', 'integer', 'min:1'],
             'WEBHOOK_TIMEOUT' => ['nullable', 'integer', 'min:1', 'max:300'],

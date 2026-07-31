@@ -31,13 +31,14 @@
                 <div>
                     <h2 class="text-lg font-semibold">{{ $session->name }}</h2>
                     <p class="mt-1 text-sm text-slate-500">{{ $session->uuid }}</p>
+                    <p class="mt-1 text-xs font-semibold uppercase text-slate-400">{{ $session->isCloudApi() ? 'Official Cloud API' : 'WhatsApp Wrapper' }}</p>
                 </div>
                 <span class="rounded-full px-3 py-1 text-xs font-semibold {{ $statusTone }}">{{ $session->status }}</span>
             </div>
             <dl class="mt-5 grid grid-cols-2 gap-4 text-sm">
                 <div><dt class="text-slate-500">Phone</dt><dd class="mt-1 font-medium" data-session-phone>{{ $session->phone_number ?: 'Not connected' }}</dd></div>
                 <div><dt class="text-slate-500">Last Seen</dt><dd class="mt-1 font-medium" data-relative-time data-session-last-seen data-timestamp="{{ $session->last_seen_at?->toISOString() }}">{{ $session->last_seen_at?->diffForHumans() ?: 'Never' }}</dd></div>
-                <div><dt class="text-slate-500">Worker</dt><dd class="mt-1 font-medium" data-session-worker>{{ $workerStatus ?: 'Not running' }}</dd></div>
+                <div><dt class="text-slate-500">Provider</dt><dd class="mt-1 font-medium" data-session-worker>{{ $session->isCloudApi() ? 'Meta Cloud API' : ($workerStatus ?: 'Not running') }}</dd></div>
                 <div><dt class="text-slate-500">Last Check</dt><dd class="mt-1 font-medium" data-relative-time data-session-last-check data-timestamp="{{ $workerSyncedAt }}">{{ $workerSyncedAt ? \Illuminate\Support\Carbon::parse($workerSyncedAt)->diffForHumans() : 'Never' }}</dd></div>
             </dl>
             @if (data_get($session->metadata, 'worker_error.message'))
@@ -51,7 +52,9 @@
                 </div>
             @endif
             <div class="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
-                @if ($session->qr_code)
+                @if ($session->isCloudApi())
+                    <div class="py-12 text-[#128c42]"><div class="text-4xl font-black">META</div><p class="mt-3 text-sm font-medium">Cloud API credentials {{ $session->status === 'ready' ? 'are valid' : 'need attention' }}.</p></div>
+                @elseif ($session->qr_code)
                     <img alt="WhatsApp QR code" class="mx-auto h-72 w-72" src="{{ $session->qr_code }}">
                     <p class="mt-3 text-sm text-slate-500">Open WhatsApp, link a device, and scan this code.</p>
                     <p class="mt-2 text-xs font-medium text-slate-500">QR expires {{ $session->qr_expires_at?->diffForHumans() ?: 'soon' }}</p>
@@ -66,9 +69,11 @@
             </div>
             @if ($canManageSessions)
                 <div class="mt-5 flex flex-wrap gap-3">
-                    <form method="POST" action="{{ route('dashboard.sessions.refresh', $session) }}">@csrf<button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">Reconnect</button></form>
-                    <form method="POST" action="{{ route('dashboard.sessions.disconnect', $session) }}" onsubmit="return confirm('Stop this worker session but keep WhatsApp auth data for later reconnect?')">@csrf<button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">Stop</button></form>
-                    <form method="POST" action="{{ route('dashboard.sessions.logout', $session) }}" onsubmit="return confirm('Log out this WhatsApp account and remove stored auth data? Reconnect will require a fresh QR scan.')">@csrf<button class="rounded-md border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Logout</button></form>
+                    <form method="POST" action="{{ route('dashboard.sessions.refresh', $session) }}">@csrf<button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">{{ $session->isCloudApi() ? 'Test connection' : 'Reconnect' }}</button></form>
+                    @if ($session->isWrapper())
+                        <form method="POST" action="{{ route('dashboard.sessions.disconnect', $session) }}" onsubmit="return confirm('Stop this worker session but keep WhatsApp auth data for later reconnect?')">@csrf<button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50">Stop</button></form>
+                        <form method="POST" action="{{ route('dashboard.sessions.logout', $session) }}" onsubmit="return confirm('Log out this WhatsApp account and remove stored auth data? Reconnect will require a fresh QR scan.')">@csrf<button class="rounded-md border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">Logout</button></form>
+                    @endif
                     <form method="POST" action="{{ route('dashboard.sessions.destroy', $session) }}" onsubmit="return confirm('Delete this session?')">
                         @csrf @method('DELETE')
                         <input type="hidden" name="destroy_worker_session" value="1">
@@ -76,6 +81,7 @@
                     </form>
                 </div>
             @endif
+            @if ($session->isWrapper())
             <div class="mt-6 border-t border-slate-100 pt-5">
                 <h3 class="text-sm font-semibold text-slate-900">Worker Snapshot</h3>
                 <dl class="mt-4 space-y-3 text-sm">
@@ -101,6 +107,31 @@
                     @endforeach
                 </dl>
             </div>
+            @endif
+            @if ($canManageSessions)
+                <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="mt-6 space-y-3 border-t border-slate-100 pt-5">
+                    @csrf @method('PATCH')
+                    <h3 class="text-sm font-semibold">Provider settings</h3>
+                    @if ($session->isWrapper())
+                        <select name="fallback_session_uuid" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                            <option value="">No Official fallback</option>
+                            @foreach ($cloudSessions as $cloudSession)
+                                <option value="{{ $cloudSession->uuid }}" @selected($session->fallback_session_id === $cloudSession->id)>{{ $cloudSession->name }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WABA ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="access_token" type="password" placeholder="New access token (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <input name="app_secret" type="password" placeholder="New app secret (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                        <div class="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
+                            <div>Callback URL: <span class="break-all font-mono">{{ url('/api/meta/whatsapp/webhook') }}</span></div>
+                            <div class="mt-2">Verify token: configure <code>META_WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> and enter the same value in Meta.</div>
+                        </div>
+                    @endif
+                    <button class="rounded-md bg-[#128c42] px-3 py-2 text-sm font-semibold text-white">Save settings</button>
+                </form>
+            @endif
         </section>
         <section class="space-y-6">
             <div class="rounded-lg border border-slate-200 bg-white">

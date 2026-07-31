@@ -17,5 +17,8 @@
     "multer": "^2.0.2",
     "qrcode": "^1.5.4",
     "whatsapp-web.js": "git+https://github.com/lindionez/whatsapp-web.js.git#f4ea1e3cf4076e44e36dfe5f81ea57048d2f7761"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.9"
   }
 }

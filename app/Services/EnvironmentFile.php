@@ -42,9 +42,17 @@ class EnvironmentFile
         'WA_WORKER_URL',
         'WA_WORKER_INTERNAL_TOKEN',
         'WA_WORKER_CALLBACK_URL',
+        'META_GRAPH_API_URL',
+        'META_GRAPH_API_VERSION',
+        'META_WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+        'META_WHATSAPP_TIMEOUT',
         'API_RATE_LIMIT_PER_MINUTE',
+        'LARAWA_MEDIA_BASE64_MAX_BYTES',
+        'MEDIA_URL_ALLOW_PRIVATE',
+        'WEBHOOK_URL_ALLOW_PRIVATE',
         'WEBHOOK_TIMEOUT',
         'WEBHOOK_RETRY_ATTEMPTS',
+        'WEBHOOK_RETRY_BACKOFF',
     ];
 
     public function path(): string

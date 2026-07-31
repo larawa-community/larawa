@@ -14,6 +14,7 @@ class Message extends Model
     protected $fillable = [
         'workspace_id',
         'whatsapp_session_id',
+        'transport_session_id',
         'wa_message_id',
         'idempotency_key',
         'direction',
@@ -45,6 +46,11 @@ class Message extends Model
     public function whatsappSession(): BelongsTo
     {
         return $this->belongsTo(WhatsappSession::class);
+    }
+
+    public function transportSession(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappSession::class, 'transport_session_id');
     }
 
     public function fallbackAttempts(): HasMany

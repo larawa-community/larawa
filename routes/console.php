@@ -76,7 +76,7 @@ Artisan::command('larawa:sessions:sync {--limit= : Maximum number of sessions to
     $this->info("Synced {$synced} WhatsApp session(s); {$missed} unavailable.");
 
     return self::SUCCESS;
-})->purpose('Sync stored WhatsApp session state from the worker');
+})->purpose('Sync stored WhatsApp session state from its configured provider');
 
 Artisan::command('larawa:messages:reconcile-acks {--dry-run : Count affected messages without updating them}', function () {
     $statuses = ['queued', 'pending', 'ack', 'sent'];

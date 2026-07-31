@@ -13,9 +13,9 @@
 
 [Website](https://lara-wa.org)
 
-LaraWA is a self-hosted WhatsApp API wrapper built with Laravel for the PHP community.
+LaraWA is a self-hosted WhatsApp API gateway built with Laravel for the PHP community. It supports Meta's Official WhatsApp Cloud API and a `whatsapp-web.js` Wrapper transport.
 
-It gives developers a simple dashboard and REST API for connecting WhatsApp Web sessions, sending messages, receiving incoming messages, and forwarding events to webhooks. The WhatsApp engine runs on [`whatsapp-web.js`](https://github.com/pedroslopez/whatsapp-web.js), while Laravel handles the API, dashboard, users, sessions, API keys, message logs, and webhook delivery.
+It gives developers a dashboard and REST API for connecting Official or Wrapper sessions, sending messages, receiving incoming messages, forwarding events to webhooks, and safely falling back from a definitively unavailable Wrapper session to a linked Official session. Wrapper connectivity runs on [`whatsapp-web.js`](https://github.com/pedroslopez/whatsapp-web.js), while Official sessions communicate with Meta Graph API.
 
 LaraWA is an independent community project. It is not affiliated with, sponsored by, or endorsed by Meta, WhatsApp, or their affiliates. Please use it responsibly and follow the terms and laws that apply to your WhatsApp account and messaging use case.
 

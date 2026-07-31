@@ -212,6 +212,18 @@ Webhook endpoint URLs are public-only by default: LaraWA rejects loopback, priva
 
 Webhook signing secrets are encrypted at rest when `APP_KEY` is configured. Existing plain-text secret rows remain readable for compatibility; rotating a legacy secret rewrites it using encrypted storage.
 
+## Official Meta WhatsApp Cloud API
+
+Set `META_WHATSAPP_WEBHOOK_VERIFY_TOKEN` to a long random value and keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. Configure this callback URL in each Meta app and subscribe the WhatsApp Business Account to the `messages` field:
+
+```text
+https://your-larawa-host.example/api/meta/whatsapp/webhook
+```
+
+Create an **Official Cloud API** session with its WABA ID, phone number ID, long-lived system-user access token, and app secret. Access tokens and app secrets are encrypted with `APP_KEY` and are never returned by the API.
+
+Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
+
 Outbound webhook delivery retries are controlled by `WEBHOOK_RETRY_ATTEMPTS` and comma-separated `WEBHOOK_RETRY_BACKOFF` seconds. LaraWA retries network failures, HTTP 408, 429, and 5xx responses until the configured attempt limit is reached, then marks the delivery `exhausted`. Permanent 4xx responses stay failed so invalid endpoints or payload contracts do not create noisy retry loops.
 
 Operators can inspect delivery history in the dashboard or through `GET /api/v1/webhook-deliveries`. Both surfaces can filter by delivery status, concrete event including `webhook.test`, webhook endpoint, and text search across endpoint/event/status/response details. Failed, exhausted, skipped, or pending deliveries can be queued again from the dashboard or with `POST /api/v1/webhook-deliveries/{delivery}/retry`; manual retry resets the attempt counter. Delivered deliveries are terminal and cannot be manually retried to avoid duplicate downstream side effects.

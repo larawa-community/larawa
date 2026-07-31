@@ -7,6 +7,7 @@ use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
+use App\Services\Messaging\WhatsappTransportManager;
 use App\Services\OutboundUrlGuard;
 use App\Services\WhatsappSessionQuery;
 use App\Services\WhatsappSessionSync;
@@ -18,6 +19,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -41,24 +43,50 @@ class SessionController extends Controller
             'statusCounts' => $sessionQuery->statusCounts($isSiteAdmin ? null : $workspace),
             'canManageSessions' => $request->user()->can('sessions.manage', $workspace),
             'isSiteAdmin' => $isSiteAdmin,
+            'cloudSessions' => $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->where('status', 'ready')->get(),
         ]);
     }
 
-    public function store(Request $request, WorkerClient $worker, AuditLogger $audit): RedirectResponse
+    public function store(Request $request, WhatsappTransportManager $transports, AuditLogger $audit): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'type' => ['nullable', Rule::in([WhatsappSession::TYPE_WRAPPER, WhatsappSession::TYPE_CLOUD])],
+            'fallback_session_uuid' => ['nullable', 'uuid'],
+            'waba_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120'],
+            'phone_number_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120', 'unique:whatsapp_cloud_configs,phone_number_id'],
+            'access_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
+            'app_secret' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
         ]);
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $workspace);
+        $data['type'] ??= WhatsappSession::TYPE_WRAPPER;
 
+        $fallback = null;
+        if (filled($data['fallback_session_uuid'] ?? null)) {
+            $fallback = $workspace->whatsappSessions()->where('uuid', $data['fallback_session_uuid'])->where('type', WhatsappSession::TYPE_CLOUD)->first();
+            if (! $fallback || $data['type'] !== WhatsappSession::TYPE_WRAPPER) {
+                throw ValidationException::withMessages(['fallback_session_uuid' => 'Choose an Official Cloud API session from this workspace.']);
+            }
+        }
         $session = $workspace->whatsappSessions()->create([
             'name' => $data['name'],
+            'type' => $data['type'],
+            'fallback_session_id' => $fallback?->id,
             'status' => 'initializing',
         ]);
 
+        if ($session->isCloudApi()) {
+            $session->cloudConfig()->create([
+                'waba_id' => $data['waba_id'],
+                'phone_number_id' => $data['phone_number_id'],
+                'access_token' => $data['access_token'],
+                'app_secret' => $data['app_secret'],
+            ]);
+        }
+
         try {
-            $worker->createSession($session);
+            $transports->for($session)->connect($session->load('cloudConfig'));
         } catch (ConnectionException|RequestException $exception) {
             $message = $this->workerFailureMessage($exception);
             $session->update([
@@ -77,7 +105,7 @@ class SessionController extends Controller
 
         $audit->log('session.created', $workspace, $request->user(), auditable: $session, request: $request);
 
-        return redirect()->route('dashboard.sessions.show', $session)->with('status', 'Session created. Scan the QR code when it appears.');
+        return redirect()->route('dashboard.sessions.show', $session)->with('status', $session->isCloudApi() ? 'Official Cloud API session connected.' : 'Session created. Scan the QR code when it appears.');
     }
 
     public function show(Request $request, WhatsappSession $session, WhatsappSessionSync $sync, WorkerClient $worker): View
@@ -98,7 +126,49 @@ class SessionController extends Controller
             'messages' => $session->messages()->latest()->limit(20)->get(),
             'discovery' => $discovery,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
+            'cloudSessions' => $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->whereKeyNot($session->id)->get(),
         ]);
+    }
+
+    public function update(Request $request, WhatsappSession $session, WhatsappTransportManager $transports): RedirectResponse
+    {
+        $workspace = $this->workspace($request);
+        $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
+        abort_unless($session->workspace_id === $workspace->id, 404);
+        $data = $request->validate([
+            'fallback_session_uuid' => ['nullable', 'uuid'],
+            'waba_id' => ['nullable', 'string', 'max:120'],
+            'phone_number_id' => ['nullable', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
+            'access_token' => ['nullable', 'string'],
+            'app_secret' => ['nullable', 'string'],
+        ]);
+
+        if ($session->isWrapper()) {
+            $fallback = filled($data['fallback_session_uuid'] ?? null)
+                ? $workspace->whatsappSessions()->where('uuid', $data['fallback_session_uuid'])->where('type', WhatsappSession::TYPE_CLOUD)->first()
+                : null;
+            if (filled($data['fallback_session_uuid'] ?? null) && ! $fallback) {
+                throw ValidationException::withMessages(['fallback_session_uuid' => 'Choose an Official Cloud API session from this workspace.']);
+            }
+            $session->update(['fallback_session_id' => $fallback?->id]);
+        } else {
+            $credentials = array_filter([
+                'waba_id' => $data['waba_id'] ?? null,
+                'phone_number_id' => $data['phone_number_id'] ?? null,
+                'access_token' => $data['access_token'] ?? null,
+                'app_secret' => $data['app_secret'] ?? null,
+            ], fn ($value) => filled($value));
+            if ($credentials !== []) {
+                $session->cloudConfig()->update($credentials);
+            }
+            try {
+                $transports->for($session)->connect($session->load('cloudConfig'));
+            } catch (ConnectionException|RequestException $exception) {
+                return back()->with('error', $this->workerFailureMessage($exception));
+            }
+        }
+
+        return back()->with('status', 'Session settings updated.');
     }
 
     public function snapshot(Request $request, WhatsappSession $session, WhatsappSessionSync $sync): JsonResponse
@@ -140,7 +210,7 @@ class SessionController extends Controller
         ]);
     }
 
-    public function refresh(Request $request, WhatsappSession $session, WorkerClient $worker): RedirectResponse
+    public function refresh(Request $request, WhatsappSession $session, WhatsappTransportManager $transports): RedirectResponse
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
@@ -148,7 +218,7 @@ class SessionController extends Controller
         $workspace = $session->workspace;
 
         try {
-            $worker->createSession($session);
+            $transports->for($session)->connect($session->load('cloudConfig'));
         } catch (ConnectionException|RequestException $exception) {
             $message = $this->workerFailureMessage($exception);
             $session->update([
@@ -164,7 +234,7 @@ class SessionController extends Controller
             return back()->with('error', $message);
         }
 
-        return back()->with('status', 'Worker reconnect requested.');
+        return back()->with('status', $session->isCloudApi() ? 'Cloud API credentials validated.' : 'Worker reconnect requested.');
     }
 
     public function sendTestMessage(Request $request, WhatsappSession $session, MessageSender $sender, OutboundUrlGuard $urlGuard, AuditLogger $audit): RedirectResponse
@@ -198,6 +268,9 @@ class SessionController extends Controller
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
         abort_unless($session->workspace_id === $workspace->id, 404);
         $workspace = $session->workspace;
+        if ($session->isCloudApi()) {
+            return back()->with('error', 'Official Cloud API sessions do not support disconnect.');
+        }
 
         try {
             $result = $this->disconnectWorker($worker, $session, false);
@@ -224,6 +297,9 @@ class SessionController extends Controller
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
         abort_unless($session->workspace_id === $workspace->id, 404);
         $workspace = $session->workspace;
+        if ($session->isCloudApi()) {
+            return back()->with('error', 'Official Cloud API sessions do not support logout.');
+        }
 
         try {
             $result = $this->disconnectWorker($worker, $session, true);
@@ -252,10 +328,12 @@ class SessionController extends Controller
         abort_unless($session->workspace_id === $workspace->id, 404);
         $workspace = $session->workspace;
 
-        try {
-            $worker->disconnect($session, $request->boolean('destroy_worker_session', true));
-        } catch (ConnectionException|RequestException $exception) {
-            return $this->lifecycleFailureRedirect($request, $workspace, $session, $audit, $exception, 'session.delete_failed');
+        if ($session->isWrapper()) {
+            try {
+                $worker->disconnect($session, $request->boolean('destroy_worker_session', true));
+            } catch (ConnectionException|RequestException $exception) {
+                return $this->lifecycleFailureRedirect($request, $workspace, $session, $audit, $exception, 'session.delete_failed');
+            }
         }
 
         $session->delete();
@@ -447,7 +525,7 @@ class SessionController extends Controller
     private function workerFailureMessage(ConnectionException|RequestException $exception): string
     {
         if ($exception instanceof RequestException) {
-            return $exception->response->json('message') ?: 'WhatsApp worker request failed.';
+            return $exception->response->json('message') ?: $exception->response->json('error.message') ?: 'WhatsApp provider request failed.';
         }
 
         return 'WhatsApp worker is unreachable.';
@@ -464,6 +542,9 @@ class SessionController extends Controller
 
     private function liveDiscovery(WhatsappSession $session, WorkerClient $worker): array
     {
+        if ($session->isCloudApi()) {
+            return ['available' => false, 'message' => 'Live discovery is only available for WhatsApp Wrapper sessions.', 'chats' => [], 'contacts' => [], 'groups' => []];
+        }
         if ($session->status !== 'ready') {
             return [
                 'available' => false,

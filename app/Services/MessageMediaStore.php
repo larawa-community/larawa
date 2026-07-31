@@ -67,6 +67,21 @@ class MessageMediaStore
         );
     }
 
+    public function storeDownloadedInbound(WhatsappSession $session, array $payload, string $contents, string $mimeType, ?string $filename = null): array
+    {
+        $this->assertWithinConfiguredLimit($contents, 'meta.media');
+
+        return $this->storeContents(
+            $session,
+            $payload,
+            $contents,
+            $mimeType,
+            $filename,
+            'inbound',
+            $payload['message_id'] ?? null,
+        );
+    }
+
     private function storeContents(WhatsappSession $session, array $payload, string $contents, string $mimeType, ?string $originalFilename, string $direction, ?string $messageId): array
     {
         $filename = $this->filename($messageId, $originalFilename, $mimeType);

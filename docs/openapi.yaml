@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: LaraWA API
   version: 13.0.0
-  description: Self-hosted WhatsApp API gateway powered by Laravel and whatsapp-web.js.
+  description: Self-hosted WhatsApp API gateway supporting Meta's Official Cloud API and a whatsapp-web.js Wrapper transport.
 servers:
   - url: http://localhost:8080/api/v1
 security:
@@ -27,6 +27,8 @@ components:
         id: { type: integer }
         uuid: { type: string, format: uuid }
         name: { type: string }
+        type: { type: string, enum: [whatsapp_wrapper, official_cloud_api], default: whatsapp_wrapper }
+        fallback_session_uuid: { type: [string, "null"], format: uuid }
         status: { type: string, enum: [created, initializing, qr, authenticated, ready, disconnected, auth_failure, failed] }
         phone_number: { type: [string, "null"] }
         qr_code: { type: [string, "null"] }
@@ -206,9 +208,38 @@ paths:
               required: [name]
               properties:
                 name: { type: string, example: Support line }
+                type: { type: string, enum: [whatsapp_wrapper, official_cloud_api], default: whatsapp_wrapper }
+                fallback_session_uuid: { type: string, format: uuid, description: Same-workspace Official Cloud API fallback for a Wrapper session. }
+                waba_id: { type: string, description: Required for Official Cloud API sessions. }
+                phone_number_id: { type: string, description: Required and globally unique for Official Cloud API sessions. }
+                access_token: { type: string, description: Required Official system-user access token; encrypted and never returned. }
+                app_secret: { type: string, description: Required Meta app secret used for webhook signatures; encrypted and never returned. }
       responses:
-        "201": { description: Session created and worker initialization requested }
+        "201": { description: Session created and its configured provider initialized or validated }
   /sessions/{session}:
+    patch:
+      summary: Update session provider settings
+      description: Requires `sessions:write`. Updates a Wrapper fallback or rotates Official Cloud API credentials; changed Cloud credentials are validated immediately.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                fallback_session_uuid: { type: [string, "null"], format: uuid }
+                waba_id: { type: string }
+                phone_number_id: { type: string }
+                access_token: { type: string }
+                app_secret: { type: string }
+      responses:
+        "200": { description: Session settings updated }
     get:
       summary: Get a WhatsApp session
       parameters:
@@ -219,7 +250,7 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Session plus live worker state when the worker can be reached.
+          description: Session plus provider state; `worker` remains populated for Wrapper sessions for backward compatibility.
           content:
             application/json:
               schema:
@@ -595,6 +626,7 @@ paths:
               type: object
               required: [message_id, reaction]
               properties:
+                to: { type: string, description: Required when the session uses Official Cloud API; optional for Wrapper sessions. }
                 message_id: { type: string }
                 reaction: { type: string, example: "👍" }
                 idempotency_key:
@@ -603,6 +635,31 @@ paths:
       responses:
         "202": { description: Reaction sent }
         "409": { description: Idempotency key already used with a different payload }
+  /sessions/{session}/messages/template:
+    post:
+      summary: Send an Official Cloud API template message
+      description: Requires `messages:send` and an Official Cloud API session. Use templates when Meta does not permit a free-form customer-service message.
+      parameters:
+        - name: session
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, name, language]
+              properties:
+                to: { type: string, example: "+1 202-555-0100" }
+                name: { type: string, example: order_update }
+                language: { type: string, example: en_US }
+                components: { type: array, items: { type: object } }
+                idempotency_key: { type: string }
+      responses:
+        "202": { description: Template accepted by Meta }
+        "422": { description: Session or template payload is invalid }
   /sessions/{session}/messages/bulk:
     post:
       summary: Send bulk text or media messages

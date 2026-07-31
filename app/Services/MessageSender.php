@@ -4,26 +4,29 @@ namespace App\Services;
 
 use App\Events\Messages\MessageSendFailed;
 use App\Models\Message;
+use App\Models\MessageFallbackAttempt;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
+use App\Services\Messaging\WhatsappTransportManager;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class MessageSender
 {
     public function __construct(
-        private WorkerClient $worker,
+        private WhatsappTransportManager $transports,
         private MessageMediaStore $mediaStore,
         private MessageFallbackManager $fallbacks,
     ) {}
 
     public function send(Workspace $workspace, WhatsappSession $session, array $payload): MessageSendResult
     {
-        $payload = $this->normalizePayloadRecipient($payload);
+        $payload = $session->isWrapper() ? $this->normalizePayloadRecipient($payload) : $payload;
         $idempotencyKey = $payload['idempotency_key'] ?? null;
         $fingerprint = $idempotencyKey ? $this->fingerprintPayload($payload) : null;
         $message = null;
@@ -69,6 +72,7 @@ class MessageSender
             $message = Message::create([
                 'workspace_id' => $workspace->id,
                 'whatsapp_session_id' => $session->id,
+                'transport_session_id' => $session->id,
                 'idempotency_key' => $idempotencyKey,
                 'direction' => 'outgoing',
                 'type' => $payload['type'],
@@ -92,10 +96,27 @@ class MessageSender
         }
 
         try {
-            $result = $this->worker->send($session, array_merge($payload, ['client_message_id' => $message->id]));
+            $result = $this->transports->for($session)->send($session, array_merge($payload, $storedPayload, ['client_message_id' => $message->id]));
+        } catch (ValidationException $exception) {
+            $message->update([
+                'status' => 'failed',
+                'payload' => array_merge($storedPayload, [
+                    'provider_error' => ['message' => $exception->getMessage(), 'status' => 422, 'errors' => $exception->errors()],
+                ]),
+            ]);
+
+            throw $exception;
         } catch (ConnectionException|RequestException $exception) {
             $status = $this->workerFailureStatus($exception);
             $messageText = $this->workerFailureMessage($exception);
+
+            if ($this->shouldTryCloudFallback($session, $exception)) {
+                $fallback = $this->tryCloudFallback($workspace, $session, $message, $payload, $storedPayload, $messageText);
+                if ($fallback) {
+                    return new MessageSendResult($fallback->fresh(), 202);
+                }
+            }
+
             $message->update([
                 'status' => 'failed',
                 'payload' => array_merge($storedPayload, [
@@ -113,7 +134,7 @@ class MessageSender
             return new MessageSendResult($message->fresh(), $status, $messageText);
         }
 
-        $message = $this->finalizeSentMessage($workspace, $session, $message, $storedPayload, $result);
+        $message = $this->finalizeSentMessage($workspace, $session, $session, $message, $storedPayload, $result);
 
         return new MessageSendResult($message->fresh(), 202);
     }
@@ -126,7 +147,7 @@ class MessageSender
         return hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES));
     }
 
-    private function finalizeSentMessage(Workspace $workspace, WhatsappSession $session, Message $message, array $storedPayload, array $result): Message
+    private function finalizeSentMessage(Workspace $workspace, WhatsappSession $session, WhatsappSession $transportSession, Message $message, array $storedPayload, array $result): Message
     {
         $messageId = $result['message_id'] ?? null;
         $payload = array_merge($this->payloadWithoutWorkerResult($storedPayload), ['worker_response' => $result]);
@@ -134,6 +155,7 @@ class MessageSender
         if (! $messageId) {
             $message->update([
                 'wa_message_id' => null,
+                'transport_session_id' => $transportSession->id,
                 'to' => $this->normalizedRecipient($result, $message),
                 'status' => $this->workerAcceptedStatus($result),
                 'payload' => $payload,
@@ -152,6 +174,7 @@ class MessageSender
             try {
                 $message->update([
                     'wa_message_id' => $messageId,
+                    'transport_session_id' => $transportSession->id,
                     'to' => $this->normalizedRecipient($result, $message),
                     'status' => $this->workerAcceptedStatus($result),
                     'payload' => $payload,
@@ -217,10 +240,91 @@ class MessageSender
     private function workerFailureMessage(ConnectionException|RequestException $exception): string
     {
         if ($exception instanceof RequestException) {
-            return $exception->response->json('message') ?: 'WhatsApp worker request failed.';
+            return $exception->response->json('message') ?: $exception->response->json('error.message') ?: 'WhatsApp provider request failed.';
         }
 
         return 'WhatsApp worker is unreachable.';
+    }
+
+    private function shouldTryCloudFallback(WhatsappSession $session, ConnectionException|RequestException $exception): bool
+    {
+        if (! $session->isWrapper() || ! $session->fallback_session_id) {
+            return false;
+        }
+
+        if ($exception instanceof RequestException) {
+            return in_array($exception->response->status(), [404, 409, 503], true);
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return ! str_contains($message, 'timed out') && ! str_contains($message, 'timeout');
+    }
+
+    private function tryCloudFallback(Workspace $workspace, WhatsappSession $session, Message $message, array $payload, array $storedPayload, string $failureReason): ?Message
+    {
+        $target = $session->fallbackSession()->with('cloudConfig')->first();
+        if (! $target || $target->workspace_id !== $workspace->id || ! $target->isCloudApi() || $target->status !== 'ready') {
+            return null;
+        }
+
+        $providerKey = 'official_cloud_api:'.$target->uuid;
+        if ($message->fallbackAttempts()->where('provider_key', $providerKey)->exists()) {
+            return null;
+        }
+
+        $attempt = MessageFallbackAttempt::create([
+            'workspace_id' => $workspace->id,
+            'message_id' => $message->id,
+            'whatsapp_session_id' => $session->id,
+            'target_whatsapp_session_id' => $target->id,
+            'provider_key' => $providerKey,
+            'channel' => WhatsappSession::TYPE_CLOUD,
+            'status' => 'requested',
+            'failure_reason' => $failureReason,
+            'trigger_source' => 'wrapper_failover',
+            'original_payload' => $payload,
+            'attempted_at' => now(),
+        ]);
+
+        try {
+            $result = $this->transports->for($target)->send($target, array_merge($payload, $storedPayload, ['client_message_id' => $message->id]));
+            $attempt->update([
+                'status' => 'succeeded',
+                'provider_message_id' => $result['message_id'] ?? null,
+                'result_payload' => $result,
+                'completed_at' => now(),
+            ]);
+
+            $payloadWithFallback = array_merge($storedPayload, [
+                'primary_failure' => ['message' => $failureReason],
+                'fallback_attempt' => [
+                    'id' => $attempt->id,
+                    'provider_key' => $providerKey,
+                    'target_session_uuid' => $target->uuid,
+                    'status' => 'succeeded',
+                ],
+            ]);
+
+            return $this->finalizeSentMessage($workspace, $session, $target, $message, $payloadWithFallback, $result);
+        } catch (ValidationException $exception) {
+            $attempt->update([
+                'status' => 'skipped',
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+                'result_payload' => ['errors' => $exception->errors()],
+                'completed_at' => now(),
+            ]);
+        } catch (Throwable $exception) {
+            $attempt->update([
+                'status' => 'failed',
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+                'completed_at' => now(),
+            ]);
+        }
+
+        return null;
     }
 
     private function workerFailureStatus(ConnectionException|RequestException $exception): int

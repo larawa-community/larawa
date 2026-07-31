@@ -3,24 +3,27 @@
 namespace App\Services;
 
 use App\Models\WhatsappSession;
+use App\Services\Messaging\WhatsappTransportManager;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 
 class WhatsappSessionSync
 {
-    public function __construct(private readonly WorkerClient $worker) {}
+    public function __construct(private readonly WhatsappTransportManager $transports) {}
 
     public function sync(WhatsappSession $session): ?array
     {
         try {
-            $workerState = $this->worker->status($session);
+            $workerState = $this->transports->for($session)->status($session);
         } catch (ConnectionException|RequestException $exception) {
             $this->recordSyncFailure($session, $exception);
 
             return null;
         }
 
-        $this->applyWorkerState($session, $workerState);
+        if ($session->isWrapper()) {
+            $this->applyWorkerState($session, $workerState);
+        }
 
         return $workerState;
     }
