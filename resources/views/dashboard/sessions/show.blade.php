@@ -15,7 +15,7 @@
         'disconnected' => 'bg-slate-200 text-slate-700',
         default => 'bg-slate-100 text-slate-700',
     };
-    $shouldAutoRefresh = in_array($session->status, ['created', 'initializing', 'qr', 'authenticated'], true);
+    $shouldAutoRefresh = $session->isWrapper() && in_array($session->status, ['created', 'initializing', 'qr', 'authenticated'], true);
     $testMessageErrorFields = ['to', 'type', 'text', 'caption', 'media_url', 'mime_type', 'media_file'];
     $showTestMessageModal = collect($testMessageErrorFields)->contains(fn ($field) => $errors->has($field));
 @endphp
@@ -23,8 +23,10 @@
 <x-layouts.app :workspace="$workspace" :title="$session->name">
     <div
         class="grid gap-6 xl:grid-cols-[420px_1fr]"
-        data-session-live-url="{{ route('dashboard.sessions.snapshot', $session) }}"
-        data-session-current-status="{{ $session->status }}"
+        @if ($session->isWrapper())
+            data-session-live-url="{{ route('dashboard.sessions.snapshot', $session) }}"
+            data-session-current-status="{{ $session->status }}"
+        @endif
     >
         <section class="rounded-lg border border-slate-200 bg-white p-5">
             <div class="flex items-start justify-between gap-4">

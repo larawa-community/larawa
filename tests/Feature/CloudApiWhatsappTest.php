@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Message;
 use App\Models\MetaWebhookReceipt;
+use App\Models\User;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\ApiKeyService;
@@ -80,6 +81,24 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertArrayNotHasKey('access_token', $cloud->cloudConfig->toArray());
         $this->assertArrayNotHasKey('app_secret', $cloud->cloudConfig->toArray());
         $this->assertArrayNotHasKey('verify_token', $cloud->cloudConfig->toArray());
+    }
+
+    public function test_official_session_dashboard_does_not_poll_or_auto_refresh(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $admin = User::factory()->create();
+        $workspace->users()->attach($admin, ['role' => 'workspace_admin']);
+        $cloud = $this->cloudSession($workspace);
+        Http::fake();
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.show', $cloud))
+            ->assertOk()
+            ->assertDontSee('data-session-live-url', false)
+            ->assertDontSee('data-auto-refresh-ms', false);
+
+        Http::assertNothingSent();
     }
 
     public function test_cloud_transport_sends_text_templates_reactions_and_media_links(): void

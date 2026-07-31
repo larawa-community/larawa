@@ -113,7 +113,13 @@ class SessionController extends Controller
         abort_unless($session->workspace_id === $workspace->id, 404);
         $workspace = $session->workspace;
 
-        $workerState = $sync->sync($session);
+        $workerState = $session->isWrapper()
+            ? $sync->sync($session)
+            : [
+                'provider' => WhatsappSession::TYPE_CLOUD,
+                'status' => $session->status,
+                'configured' => $session->cloudConfig?->isConfigured() ?? false,
+            ];
         $session = $session->fresh();
         $discovery = $this->liveDiscovery($session, $worker);
 
