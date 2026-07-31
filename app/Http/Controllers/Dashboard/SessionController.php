@@ -53,11 +53,6 @@ class SessionController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'type' => ['nullable', Rule::in([WhatsappSession::TYPE_WRAPPER, WhatsappSession::TYPE_CLOUD])],
             'fallback_session_uuid' => ['nullable', 'uuid'],
-            'waba_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120'],
-            'phone_number_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120', 'unique:whatsapp_cloud_configs,phone_number_id'],
-            'access_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
-            'app_secret' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
-            'verify_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'min:16'],
         ]);
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $workspace);
@@ -74,40 +69,34 @@ class SessionController extends Controller
             'name' => $data['name'],
             'type' => $data['type'],
             'fallback_session_id' => $fallback?->id,
-            'status' => 'initializing',
+            'status' => $data['type'] === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
         ]);
 
         if ($session->isCloudApi()) {
-            $session->cloudConfig()->create([
-                'waba_id' => $data['waba_id'],
-                'phone_number_id' => $data['phone_number_id'],
-                'access_token' => $data['access_token'],
-                'app_secret' => $data['app_secret'],
-                'verify_token' => $data['verify_token'],
-            ]);
-        }
+            $session->cloudConfig()->create();
+        } else {
+            try {
+                $transports->for($session)->connect($session);
+            } catch (ConnectionException|RequestException $exception) {
+                $message = $this->workerFailureMessage($exception);
+                $session->update([
+                    'status' => 'failed',
+                    'metadata' => array_merge($session->metadata ?: [], [
+                        'worker_error' => [
+                            'message' => $message,
+                            'status' => $this->workerFailureStatus($exception),
+                        ],
+                    ]),
+                ]);
+                $audit->log('session.create_failed', $workspace, $request->user(), auditable: $session, request: $request);
 
-        try {
-            $transports->for($session)->connect($session->load('cloudConfig'));
-        } catch (ConnectionException|RequestException $exception) {
-            $message = $this->workerFailureMessage($exception);
-            $session->update([
-                'status' => 'failed',
-                'metadata' => array_merge($session->metadata ?: [], [
-                    'worker_error' => [
-                        'message' => $message,
-                        'status' => $this->workerFailureStatus($exception),
-                    ],
-                ]),
-            ]);
-            $audit->log('session.create_failed', $workspace, $request->user(), auditable: $session, request: $request);
-
-            return redirect()->route('dashboard.sessions.show', $session)->with('error', $message);
+                return redirect()->route('dashboard.sessions.show', $session)->with('error', $message);
+            }
         }
 
         $audit->log('session.created', $workspace, $request->user(), auditable: $session, request: $request);
 
-        return redirect()->route('dashboard.sessions.show', $session)->with('status', $session->isCloudApi() ? 'Official Cloud API session connected.' : 'Session created. Scan the QR code when it appears.');
+        return redirect()->route('dashboard.sessions.show', $session)->with('status', $session->isCloudApi() ? 'Official session created. Copy its callback URL and verify token into Meta, then complete the app settings.' : 'Session created. Scan the QR code when it appears.');
     }
 
     public function show(Request $request, WhatsappSession $session, WhatsappSessionSync $sync, WorkerClient $worker): View
@@ -143,7 +132,6 @@ class SessionController extends Controller
             'phone_number_id' => ['nullable', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'access_token' => ['nullable', 'string'],
             'app_secret' => ['nullable', 'string'],
-            'verify_token' => ['nullable', 'string', 'min:16'],
         ]);
 
         if ($session->isWrapper()) {
@@ -160,15 +148,25 @@ class SessionController extends Controller
                 'phone_number_id' => $data['phone_number_id'] ?? null,
                 'access_token' => $data['access_token'] ?? null,
                 'app_secret' => $data['app_secret'] ?? null,
-                'verify_token' => $data['verify_token'] ?? null,
             ], fn ($value) => filled($value));
             if ($credentials !== []) {
+                $cloudConfig = $session->cloudConfig;
+                $prospective = array_merge([
+                    'waba_id' => $cloudConfig?->waba_id,
+                    'phone_number_id' => $cloudConfig?->phone_number_id,
+                    'access_token' => $cloudConfig?->access_token,
+                    'app_secret' => $cloudConfig?->app_secret,
+                ], $credentials);
+                $missing = collect($prospective)->filter(fn ($value) => ! filled($value))->keys();
+                if ($missing->isNotEmpty()) {
+                    throw ValidationException::withMessages($missing->mapWithKeys(fn ($key) => [$key => 'This Meta app setting is required to activate the session.'])->all());
+                }
                 $session->cloudConfig()->update($credentials);
-            }
-            try {
-                $transports->for($session)->connect($session->load('cloudConfig'));
-            } catch (ConnectionException|RequestException $exception) {
-                return back()->with('error', $this->workerFailureMessage($exception));
+                try {
+                    $transports->for($session)->connect($session->load('cloudConfig'));
+                } catch (ConnectionException|RequestException $exception) {
+                    return back()->with('error', $this->workerFailureMessage($exception));
+                }
             }
         }
 

@@ -100,14 +100,7 @@
                             @endforeach
                         </select>
                     </label>
-                    <div class="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-                        <p class="text-xs text-slate-500">Required only for Official Cloud API sessions. Secrets are encrypted at rest.</p>
-                        <input name="waba_id" placeholder="WABA ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="phone_number_id" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="access_token" type="password" autocomplete="new-password" placeholder="System-user access token" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="app_secret" type="password" autocomplete="new-password" placeholder="Meta app secret" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="verify_token" type="password" autocomplete="new-password" placeholder="Webhook verify token (16+ characters)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                    </div>
+                    <p class="rounded-md bg-slate-50 p-3 text-xs text-slate-500">For Official Cloud API, LaraWA creates the session first and generates its callback URL and verify token. Meta app credentials are added on the next screen.</p>
                     <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
                 </form>
             </section>

@@ -169,7 +169,14 @@ class CloudApiWhatsappTransport implements WhatsappTransport
 
     private function credentials(WhatsappSession $session): WhatsappCloudConfig
     {
-        return $session->cloudConfig()->firstOrFail();
+        $config = $session->cloudConfig()->firstOrFail();
+        if (! $config->isConfigured()) {
+            throw ValidationException::withMessages([
+                'session' => 'Complete the Meta app settings before using this Official Cloud API session.',
+            ]);
+        }
+
+        return $config;
     }
 
     private function http(WhatsappCloudConfig $config): PendingRequest

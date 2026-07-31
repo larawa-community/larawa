@@ -13,6 +13,14 @@ class WhatsappSessionSync
 
     public function sync(WhatsappSession $session): ?array
     {
+        if ($session->isCloudApi() && ! $session->cloudConfig?->isConfigured()) {
+            return [
+                'provider' => WhatsappSession::TYPE_CLOUD,
+                'status' => $session->status,
+                'configured' => false,
+            ];
+        }
+
         try {
             $workerState = $this->transports->for($session)->status($session);
         } catch (ConnectionException|RequestException $exception) {

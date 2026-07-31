@@ -16,10 +16,10 @@ return new class extends Migration
         Schema::create('whatsapp_cloud_configs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('whatsapp_session_id')->unique()->constrained()->cascadeOnDelete();
-            $table->string('waba_id');
-            $table->string('phone_number_id')->unique();
-            $table->text('access_token');
-            $table->text('app_secret');
+            $table->string('waba_id')->nullable();
+            $table->string('phone_number_id')->nullable()->unique();
+            $table->text('access_token')->nullable();
+            $table->text('app_secret')->nullable();
             $table->text('verify_token');
             $table->timestamps();
         });

@@ -18,7 +18,7 @@ class CloudApiWhatsappTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_api_creates_and_validates_an_official_session_without_returning_secrets(): void
+    public function test_api_creates_an_official_session_then_validates_its_app_settings(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Cloud setup', ['sessions:write']);
@@ -34,15 +34,29 @@ class CloudApiWhatsappTest extends TestCase
         $response = $this->withToken($apiKey)->postJson('/api/v1/sessions', [
             'name' => 'Official support',
             'type' => WhatsappSession::TYPE_CLOUD,
-            'waba_id' => 'waba-api',
-            'phone_number_id' => 'phone-api',
-            'access_token' => 'api-cloud-token',
-            'app_secret' => 'api-app-secret',
-            'verify_token' => 'api-verify-token-1234',
         ]);
 
         $response->assertCreated()
             ->assertJsonPath('data.type', WhatsappSession::TYPE_CLOUD)
+            ->assertJsonPath('data.status', 'created')
+            ->assertJsonPath('provider.configured', false)
+            ->assertJsonPath('webhook.callback_url', url('/api/meta/whatsapp/webhook/'.$response->json('data.uuid')))
+            ->assertJson(fn ($json) => $json->whereType('webhook.verify_token', 'string')->etc())
+            ->assertJsonMissing(['access_token' => 'api-cloud-token'])
+            ->assertJsonMissing(['app_secret' => 'api-app-secret']);
+
+        $this->assertSame(64, strlen($response->json('webhook.verify_token')));
+        $raw = DB::table('whatsapp_cloud_configs')->where('whatsapp_session_id', $response->json('data.id'))->first();
+        $this->assertNotSame($response->json('webhook.verify_token'), $raw->verify_token);
+
+        $update = $this->withToken($apiKey)->patchJson('/api/v1/sessions/'.$response->json('data.uuid'), [
+            'waba_id' => 'waba-api',
+            'phone_number_id' => 'phone-api',
+            'access_token' => 'api-cloud-token',
+            'app_secret' => 'api-app-secret',
+        ]);
+
+        $update->assertOk()
             ->assertJsonPath('data.status', 'ready')
             ->assertJsonPath('data.phone_number', '+1 555 000 1111')
             ->assertJsonMissing(['access_token' => 'api-cloud-token'])
@@ -236,7 +250,10 @@ class CloudApiWhatsappTest extends TestCase
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256=bad',
         ], $knownRaw)->assertUnauthorized();
 
-        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], ['CONTENT_TYPE' => 'application/json'], $unknownRaw)->assertOk();
+        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $unknownRaw, 'app-secret'),
+        ], $unknownRaw)->assertOk();
         $this->assertDatabaseCount('meta_webhook_receipts', 0);
     }
 

@@ -41,22 +41,32 @@ class SessionController extends Controller
             'name' => $data['name'],
             'type' => $type,
             'fallback_session_id' => $fallback?->id,
-            'status' => 'initializing',
+            'status' => $type === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
         ]);
 
+        $webhook = null;
         if ($session->isCloudApi()) {
-            $session->cloudConfig()->create($this->cloudCredentialData($data));
-        }
-
-        try {
-            $providerState = $transports->for($session)->connect($session->load('cloudConfig'));
-        } catch (ConnectionException|RequestException $exception) {
-            return $this->connectionFailure($request, $workspace, $session, $audit, $exception, 'api.session.create_failed');
+            $cloudConfig = $session->cloudConfig()->create();
+            $providerState = ['provider' => WhatsappSession::TYPE_CLOUD, 'status' => 'created', 'configured' => false];
+            $webhook = [
+                'callback_url' => url('/api/meta/whatsapp/webhook/'.$session->uuid),
+                'verify_token' => $cloudConfig->verify_token,
+            ];
+        } else {
+            try {
+                $providerState = $transports->for($session)->connect($session);
+            } catch (ConnectionException|RequestException $exception) {
+                return $this->connectionFailure($request, $workspace, $session, $audit, $exception, 'api.session.create_failed');
+            }
         }
 
         $audit->log('api.session.created', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, request: $request);
 
-        return response()->json(['data' => $session->fresh()->load('fallbackSession'), 'provider' => $providerState], 201);
+        return response()->json(array_filter([
+            'data' => $session->fresh()->load('fallbackSession'),
+            'provider' => $providerState,
+            'webhook' => $webhook,
+        ], fn ($value) => $value !== null), 201);
     }
 
     public function update(Request $request, WhatsappSession $session, WhatsappTransportManager $transports, AuditLogger $audit): JsonResponse
@@ -70,7 +80,6 @@ class SessionController extends Controller
             'phone_number_id' => ['sometimes', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'access_token' => ['sometimes', 'string'],
             'app_secret' => ['sometimes', 'string'],
-            'verify_token' => ['sometimes', 'string', 'min:16'],
         ]);
 
         if (array_key_exists('fallback_session_uuid', $data)) {
@@ -84,12 +93,23 @@ class SessionController extends Controller
         if ($session->isCloudApi()) {
             $credentials = array_filter($this->cloudCredentialData($data), fn ($value) => $value !== null);
             if ($credentials !== []) {
+                $cloudConfig = $session->cloudConfig;
+                $prospective = array_merge([
+                    'waba_id' => $cloudConfig?->waba_id,
+                    'phone_number_id' => $cloudConfig?->phone_number_id,
+                    'access_token' => $cloudConfig?->access_token,
+                    'app_secret' => $cloudConfig?->app_secret,
+                ], $credentials);
+                $missing = collect($prospective)->filter(fn ($value) => ! filled($value))->keys();
+                if ($missing->isNotEmpty()) {
+                    throw ValidationException::withMessages($missing->mapWithKeys(fn ($key) => [$key => 'This Meta app setting is required to activate the session.'])->all());
+                }
                 $session->cloudConfig()->updateOrCreate([], $credentials);
-            }
-            try {
-                $transports->for($session)->connect($session->load('cloudConfig'));
-            } catch (ConnectionException|RequestException $exception) {
-                return $this->connectionFailure($request, $workspace, $session, $audit, $exception, 'api.session.update_failed');
+                try {
+                    $transports->for($session)->connect($session->load('cloudConfig'));
+                } catch (ConnectionException|RequestException $exception) {
+                    return $this->connectionFailure($request, $workspace, $session, $audit, $exception, 'api.session.update_failed');
+                }
             }
         }
 
@@ -209,11 +229,6 @@ class SessionController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'type' => ['nullable', Rule::in([WhatsappSession::TYPE_WRAPPER, WhatsappSession::TYPE_CLOUD])],
             'fallback_session_uuid' => ['nullable', 'uuid'],
-            'waba_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120'],
-            'phone_number_id' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'max:120', 'unique:whatsapp_cloud_configs,phone_number_id'],
-            'access_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
-            'app_secret' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string'],
-            'verify_token' => ['required_if:type,'.WhatsappSession::TYPE_CLOUD, 'string', 'min:16'],
         ];
     }
 
@@ -240,7 +255,6 @@ class SessionController extends Controller
             'phone_number_id' => $data['phone_number_id'] ?? null,
             'access_token' => $data['access_token'] ?? null,
             'app_secret' => $data['app_secret'] ?? null,
-            'verify_token' => $data['verify_token'] ?? null,
         ];
     }
 

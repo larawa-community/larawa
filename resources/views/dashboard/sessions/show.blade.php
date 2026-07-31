@@ -124,10 +124,12 @@
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="access_token" type="password" placeholder="New access token (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="app_secret" type="password" placeholder="New app secret (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="verify_token" type="password" placeholder="New verify token (leave blank to keep)" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <div class="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-                            <div>Callback URL: <span class="break-all font-mono">{{ url('/api/meta/whatsapp/webhook/'.$session->uuid) }}</span></div>
-                            <div class="mt-2">Use this session's saved verify token in Meta App Dashboard.</div>
+                            <label class="block font-medium" for="meta-callback-url">Callback URL</label>
+                            <input id="meta-callback-url" type="text" readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook/'.$session->uuid) }}" class="mt-1 w-full rounded border border-slate-200 bg-white p-2 font-mono text-slate-900">
+                            <label class="mt-3 block font-medium" for="meta-verify-token">Verify token</label>
+                            <input id="meta-verify-token" type="text" readonly onclick="this.select()" value="{{ $session->cloudConfig?->verify_token }}" class="mt-1 w-full rounded border border-slate-200 bg-white p-2 font-mono text-slate-900">
+                            <div class="mt-2">Copy both values into Meta App Dashboard, then save these app settings to activate sending.</div>
                         </div>
                     @endif
                     <button class="rounded-md bg-[#128c42] px-3 py-2 text-sm font-semibold text-white">Save settings</button>

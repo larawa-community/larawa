@@ -33,6 +33,13 @@ components:
         phone_number: { type: [string, "null"] }
         qr_code: { type: [string, "null"] }
         last_seen_at: { type: [string, "null"], format: date-time }
+    MetaWebhookSetup:
+      type: object
+      description: Generated only for an Official Cloud API session. Copy these values into the Meta App webhook configuration.
+      required: [callback_url, verify_token]
+      properties:
+        callback_url: { type: string, format: uri }
+        verify_token: { type: string, minLength: 64, maxLength: 64 }
     WorkerSessionState:
       type: object
       nullable: true
@@ -210,13 +217,21 @@ paths:
                 name: { type: string, example: Support line }
                 type: { type: string, enum: [whatsapp_wrapper, official_cloud_api], default: whatsapp_wrapper }
                 fallback_session_uuid: { type: string, format: uuid, description: Same-workspace Official Cloud API fallback for a Wrapper session. }
-                waba_id: { type: string, description: Required for Official Cloud API sessions. }
-                phone_number_id: { type: string, description: Required and globally unique for Official Cloud API sessions. }
-                access_token: { type: string, description: Required Official system-user access token; encrypted and never returned. }
-                app_secret: { type: string, description: Required Meta app secret used for webhook signatures; encrypted and never returned. }
-                verify_token: { type: string, minLength: 16, description: Required per-session webhook verification token; encrypted and never returned. }
       responses:
-        "201": { description: Session created and its configured provider initialized or validated }
+        "201":
+          description: Session created. Official sessions include their generated callback URL and verify token for Meta App setup.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, provider]
+                properties:
+                  data: { $ref: "#/components/schemas/Session" }
+                  provider: { type: object }
+                  webhook:
+                    oneOf:
+                      - { $ref: "#/components/schemas/MetaWebhookSetup" }
+                      - { type: "null" }
   /sessions/{session}:
     patch:
       summary: Update session provider settings
@@ -239,7 +254,6 @@ paths:
                 phone_number_id: { type: string }
                 access_token: { type: string }
                 app_secret: { type: string }
-                verify_token: { type: string, minLength: 16 }
       responses:
         "200": { description: Session settings updated }
     get:

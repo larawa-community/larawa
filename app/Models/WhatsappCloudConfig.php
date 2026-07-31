@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 
 class WhatsappCloudConfig extends Model
 {
@@ -14,9 +15,24 @@ class WhatsappCloudConfig extends Model
 
     protected $hidden = ['access_token', 'app_secret', 'verify_token'];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $config): void {
+            $config->verify_token ??= Str::random(64);
+        });
+    }
+
     public function whatsappSession(): BelongsTo
     {
         return $this->belongsTo(WhatsappSession::class);
+    }
+
+    public function isConfigured(): bool
+    {
+        return filled($this->waba_id)
+            && filled($this->phone_number_id)
+            && filled($this->access_token)
+            && filled($this->app_secret);
     }
 
     protected function accessToken(): Attribute

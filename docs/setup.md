@@ -214,13 +214,13 @@ Webhook signing secrets are encrypted at rest when `APP_KEY` is configured. Exis
 
 ## Official Meta WhatsApp Cloud API
 
-Keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. Each Official session has its own encrypted webhook verify token. Configure the callback URL shown on that session's dashboard page in its Meta app and subscribe the WhatsApp Business Account to the `messages` field:
+Keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. First select **Official Cloud API** and create the session. LaraWA generates a unique encrypted verify token and a callback URL containing that session's UUID. Copy both values from the session page into its Meta app, then subscribe the WhatsApp Business Account to the `messages` field:
 
 ```text
 https://your-larawa-host.example/api/meta/whatsapp/webhook/{session-uuid}
 ```
 
-Create an **Official Cloud API** session with its Meta app settings: WABA ID, phone number ID, long-lived system-user access token, app secret, and a verify token of your choosing. LaraWA discovers the display phone number from Meta; users do not enter it. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY` and are never returned by the API.
+After Meta accepts the callback URL and generated token, enter the WABA ID, phone number ID, long-lived system-user access token, and app secret on the LaraWA session page. Saving validates these settings through Graph API and discovers the display phone number from Meta; users do not enter the display phone number. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY`; access tokens and app secrets are never returned by the API.
 
 Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
 

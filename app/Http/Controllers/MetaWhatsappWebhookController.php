@@ -40,6 +40,16 @@ class MetaWhatsappWebhookController extends Controller
             return response()->json(['message' => 'Invalid WhatsApp webhook payload.'], 400);
         }
 
+        if (! filled($session->cloudConfig->app_secret)) {
+            return response()->json(['message' => 'Complete the Meta app settings before receiving webhooks.'], 409);
+        }
+
+        $signature = (string) $request->header('X-Hub-Signature-256');
+        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $session->cloudConfig->app_secret);
+        if ($signature === '' || ! hash_equals($expected, $signature)) {
+            return response()->json(['message' => 'Invalid webhook signature.'], 401);
+        }
+
         $phoneIds = $this->phoneNumberIds($payload);
         if (! in_array($session->cloudConfig->phone_number_id, $phoneIds, true)) {
             Log::notice('Meta WhatsApp webhook did not match the callback session phone number ID.', [
@@ -48,13 +58,6 @@ class MetaWhatsappWebhookController extends Controller
             ]);
 
             return response()->json(['ok' => true]);
-        }
-
-        $signature = (string) $request->header('X-Hub-Signature-256');
-        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $session->cloudConfig->app_secret);
-        $valid = $signature !== '' && hash_equals($expected, $signature);
-        if (! $valid) {
-            return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }
 
         try {
