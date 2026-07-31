@@ -13,6 +13,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -37,16 +38,24 @@ class SessionController extends Controller
         $type = $data['type'] ?? WhatsappSession::TYPE_WRAPPER;
         $fallback = $this->resolveFallback($workspace, $data['fallback_session_uuid'] ?? null, $type);
 
-        $session = $workspace->whatsappSessions()->create([
-            'name' => $data['name'],
-            'type' => $type,
-            'fallback_session_id' => $fallback?->id,
-            'status' => $type === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
-        ]);
+        $session = DB::transaction(function () use ($workspace, $data, $type, $fallback): WhatsappSession {
+            $session = $workspace->whatsappSessions()->create([
+                'name' => $data['name'],
+                'type' => $type,
+                'fallback_session_id' => $fallback?->id,
+                'status' => $type === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
+            ]);
+
+            if ($session->isCloudApi()) {
+                $session->cloudConfig()->create();
+            }
+
+            return $session;
+        });
 
         $webhook = null;
         if ($session->isCloudApi()) {
-            $cloudConfig = $session->cloudConfig()->create();
+            $cloudConfig = $session->cloudConfig;
             $providerState = ['provider' => WhatsappSession::TYPE_CLOUD, 'status' => 'created', 'configured' => false];
             $webhook = [
                 'callback_url' => url('/api/meta/whatsapp/webhook/'.$session->uuid),

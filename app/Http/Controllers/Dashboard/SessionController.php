@@ -19,6 +19,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -65,16 +66,22 @@ class SessionController extends Controller
                 throw ValidationException::withMessages(['fallback_session_uuid' => 'Choose an Official Cloud API session from this workspace.']);
             }
         }
-        $session = $workspace->whatsappSessions()->create([
-            'name' => $data['name'],
-            'type' => $data['type'],
-            'fallback_session_id' => $fallback?->id,
-            'status' => $data['type'] === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
-        ]);
+        $session = DB::transaction(function () use ($workspace, $data, $fallback): WhatsappSession {
+            $session = $workspace->whatsappSessions()->create([
+                'name' => $data['name'],
+                'type' => $data['type'],
+                'fallback_session_id' => $fallback?->id,
+                'status' => $data['type'] === WhatsappSession::TYPE_CLOUD ? 'created' : 'initializing',
+            ]);
 
-        if ($session->isCloudApi()) {
-            $session->cloudConfig()->create();
-        } else {
+            if ($session->isCloudApi()) {
+                $session->cloudConfig()->create();
+            }
+
+            return $session;
+        });
+
+        if ($session->isWrapper()) {
             try {
                 $transports->for($session)->connect($session);
             } catch (ConnectionException|RequestException $exception) {
