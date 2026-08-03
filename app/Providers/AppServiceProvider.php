@@ -88,6 +88,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('workspace.manage', fn ($user, $workspace) => $user->isWorkspaceAdmin($workspace));
         Gate::define('sessions.view', fn ($user, $workspace) => $user->isWorkspaceUser($workspace));
         Gate::define('sessions.manage', fn ($user, $workspace) => $user->isWorkspaceAdmin($workspace));
+        Gate::define('cloud-conversations.view', fn ($user, $workspace) => $user->isWorkspaceUser($workspace));
+        Gate::define('cloud-conversations.reply', fn ($user, $workspace) => $user->isWorkspaceUser($workspace));
+        Gate::define('cloud-templates.view', fn ($user, $workspace) => $user->isWorkspaceUser($workspace));
+        Gate::define('cloud-templates.manage', fn ($user, $workspace) => $user->isWorkspaceAdmin($workspace));
         Gate::define('api-keys.manage', fn ($user, $workspace) => $user->isWorkspaceAdmin($workspace));
         Gate::define('webhooks.view', fn ($user, $workspace) => $user->isWorkspaceUser($workspace));
         Gate::define('webhooks.manage', fn ($user, $workspace) => $user->isWorkspaceAdmin($workspace));

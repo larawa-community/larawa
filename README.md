@@ -52,8 +52,8 @@ After setup:
 
 1. Login to the dashboard.
 2. Open `Sessions`.
-3. Create a new WhatsApp session.
-4. Scan the QR code using WhatsApp > Linked devices.
+3. Create a new WhatsApp session and choose Official Cloud API or WhatsApp Wrapper.
+4. For Wrapper, scan the QR code using WhatsApp > Linked devices. For Official, copy the generated callback URL and verify token into the Meta app, then configure its credentials.
 5. Wait until the session status becomes `ready`.
 6. Create an API key from the dashboard.
 7. Start calling the API.
@@ -63,6 +63,8 @@ Advance setting, please review the [setup guide](docs/setup.md).
 ## Features and Functionality
 
 - WhatsApp Web session connection with QR pairing.
+- Official Cloud API conversation inbox with 24-hour customer-service window enforcement.
+- Meta template synchronization, guided Utility/Marketing template creation and editing, and approved-template sending.
 - Multi-session support with persistent browser authentication.
 - REST API for text, image, video, file/document, audio, reaction, and bulk messages.
 - Send text, images, videos, and files to individual WhatsApp users or groups.

@@ -222,6 +222,26 @@ assert_postgres_env_profile() {
     '
 }
 
+assert_postgres_volume_persistence() {
+    local compose=(docker compose --env-file .env.postgres.example -p "$POSTGRES_PROJECT")
+    local marker="larawa-postgres-volume-preserved"
+    local actual=""
+
+    "${compose[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U larawa -d larawa -c \
+        "CREATE TABLE IF NOT EXISTS larawa_volume_probe (id integer PRIMARY KEY, marker text NOT NULL); INSERT INTO larawa_volume_probe (id, marker) VALUES (1, '${marker}') ON CONFLICT (id) DO UPDATE SET marker = EXCLUDED.marker;" >/dev/null
+
+    APP_PORT="$POSTGRES_PORT" "${compose[@]}" up -d --no-deps --force-recreate postgres >/dev/null
+    wait_for_postgres_compose_health
+
+    actual="$("${compose[@]}" exec -T postgres psql -At -v ON_ERROR_STOP=1 -U larawa -d larawa -c 'SELECT marker FROM larawa_volume_probe WHERE id = 1')"
+    if [[ "$actual" != "$marker" ]]; then
+        echo "PostgreSQL named-volume persistence probe failed: ${actual:-missing marker}" >&2
+        return 1
+    fi
+
+    "${compose[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U larawa -d larawa -c 'DROP TABLE larawa_volume_probe' >/dev/null
+}
+
 assert_env_aliases_match_examples() {
     if [ -f .env.sample ]; then
         diff -u .env.example .env.sample
@@ -343,6 +363,7 @@ if [[ "$POSTGRES_UP" == "1" ]]; then
     run assert_security_headers "http://localhost:${POSTGRES_PORT}/login"
     run assert_docs_unavailable "http://localhost:${POSTGRES_PORT}"
     run env LARAWA_SMOKE_URL="http://localhost:${POSTGRES_PORT}" LARAWA_SMOKE_DB_CONNECTION=pgsql scripts/smoke-dashboard.sh
+    run assert_postgres_volume_persistence
     run env APP_PORT="$POSTGRES_PORT" docker compose --env-file .env.postgres.example -p "$POSTGRES_PROJECT" ps
 fi
 

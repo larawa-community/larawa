@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Events\Messages\MessageSendFailed;
 use App\Models\Message;
 use App\Models\MessageFallbackAttempt;
+use App\Models\WhatsappConversation;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\Messaging\WhatsappTransportManager;
@@ -151,6 +152,10 @@ class MessageSender
     {
         $messageId = $result['message_id'] ?? null;
         $payload = array_merge($this->payloadWithoutWorkerResult($storedPayload), ['worker_response' => $result]);
+        $conversation = $this->associateConversation($transportSession, $this->normalizedRecipient($result, $message));
+        if ($conversation) {
+            $message->update(['conversation_id' => $conversation->id]);
+        }
 
         if (! $messageId) {
             $message->update([
@@ -215,6 +220,7 @@ class MessageSender
                 'idempotency_key' => $callbackMessage->idempotency_key ?? $idempotencyKey,
                 'direction' => 'outgoing',
                 'type' => $message->type ?: $callbackMessage->type,
+                'conversation_id' => $message->conversation_id ?: $callbackMessage->conversation_id,
                 'status' => $callbackMessage->status ?? $this->workerAcceptedStatus($result),
                 'to' => $this->normalizedRecipient($result, $message) ?: $callbackMessage->to,
                 'body' => $message->body ?: $callbackMessage->body,
@@ -355,6 +361,30 @@ class MessageSender
     private function normalizedRecipient(array $result, Message $message): ?string
     {
         return $result['requested_to'] ?? $message->to;
+    }
+
+    private function associateConversation(WhatsappSession $session, ?string $recipient): ?WhatsappConversation
+    {
+        if (! $session->isCloudApi()) {
+            return null;
+        }
+
+        $customerWaId = preg_replace('/\D+/', '', (string) $recipient) ?: '';
+        if ($customerWaId === '') {
+            return null;
+        }
+
+        $conversation = WhatsappConversation::query()->firstOrCreate([
+            'whatsapp_session_id' => $session->id,
+            'customer_wa_id' => $customerWaId,
+        ], [
+            'workspace_id' => $session->workspace_id,
+        ]);
+        if (! $conversation->latest_message_at || now()->isAfter($conversation->latest_message_at)) {
+            $conversation->update(['latest_message_at' => now()]);
+        }
+
+        return $conversation;
     }
 
     private function normalizePayloadRecipient(array $payload): array

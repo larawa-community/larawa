@@ -3,6 +3,8 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Dashboard\AccountSecurityController;
 use App\Http\Controllers\Dashboard\ApiKeyController;
+use App\Http\Controllers\Dashboard\CloudConversationController;
+use App\Http\Controllers\Dashboard\CloudTemplateController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Dashboard\LogController;
 use App\Http\Controllers\Dashboard\MarketplaceController;
@@ -110,6 +112,19 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::post('/sessions/{session}/disconnect', [SessionController::class, 'disconnect'])->name('.sessions.disconnect');
         Route::post('/sessions/{session}/logout', [SessionController::class, 'logout'])->name('.sessions.logout');
         Route::delete('/sessions/{session}', [SessionController::class, 'destroy'])->name('.sessions.destroy');
+
+        Route::get('/sessions/{session}/conversations', [CloudConversationController::class, 'index'])->name('.sessions.conversations.index');
+        Route::get('/sessions/{session}/conversations/{conversation}', [CloudConversationController::class, 'show'])->name('.sessions.conversations.show');
+        Route::get('/sessions/{session}/cloud-settings', [CloudConversationController::class, 'settings'])->name('.sessions.cloud-settings');
+        Route::post('/sessions/{session}/conversations/{conversation}/messages/text', [CloudConversationController::class, 'reply'])->name('.sessions.conversations.messages.text');
+        Route::post('/sessions/{session}/conversations/{conversation}/messages/template', [CloudConversationController::class, 'sendTemplate'])->name('.sessions.conversations.messages.template');
+        Route::get('/sessions/{session}/templates', [CloudTemplateController::class, 'index'])->name('.sessions.templates.index');
+        Route::get('/sessions/{session}/templates/create', [CloudTemplateController::class, 'create'])->name('.sessions.templates.create');
+        Route::post('/sessions/{session}/templates/sync', [CloudTemplateController::class, 'sync'])->name('.sessions.templates.sync');
+        Route::post('/sessions/{session}/templates', [CloudTemplateController::class, 'store'])->name('.sessions.templates.store');
+        Route::get('/sessions/{session}/templates/{template}/edit', [CloudTemplateController::class, 'edit'])->name('.sessions.templates.edit');
+        Route::patch('/sessions/{session}/templates/{template}', [CloudTemplateController::class, 'update'])->name('.sessions.templates.update');
+        Route::post('/sessions/{session}/templates/{template}/send', [CloudTemplateController::class, 'send'])->name('.sessions.templates.send');
 
         Route::get('/api-keys', [ApiKeyController::class, 'index'])->name('.api-keys.index');
         Route::post('/api-keys', [ApiKeyController::class, 'store'])->name('.api-keys.store');

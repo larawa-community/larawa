@@ -12,6 +12,8 @@ use Illuminate\Validation\ValidationException;
 
 class CloudApiWhatsappTransport implements WhatsappTransport
 {
+    public function __construct(private CloudServiceWindowGuard $serviceWindow) {}
+
     public function key(): string
     {
         return WhatsappSession::TYPE_CLOUD;
@@ -55,6 +57,9 @@ class CloudApiWhatsappTransport implements WhatsappTransport
         $config = $this->credentials($session);
         $to = $this->recipient($payload['to'] ?? null);
         $type = (string) ($payload['type'] ?? 'text');
+        if ($type !== 'template') {
+            $this->serviceWindow->ensureCanSend($session, $to);
+        }
         $body = ['messaging_product' => 'whatsapp', 'recipient_type' => 'individual', 'to' => $to, 'type' => $type];
 
         if ($type === 'text') {

@@ -113,6 +113,10 @@ class SessionController extends Controller
         abort_unless($session->workspace_id === $workspace->id, 404);
         $workspace = $session->workspace;
 
+        if ($session->isCloudApi()) {
+            return app(CloudConversationController::class)->index($request, $session);
+        }
+
         $workerState = $session->isWrapper()
             ? $sync->sync($session)
             : [
@@ -143,6 +147,7 @@ class SessionController extends Controller
             'fallback_session_uuid' => ['nullable', 'uuid'],
             'waba_id' => ['nullable', 'string', 'max:120'],
             'phone_number_id' => ['nullable', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
+            'app_id' => ['nullable', 'string', 'max:120'],
             'access_token' => ['nullable', 'string'],
             'app_secret' => ['nullable', 'string'],
         ]);
@@ -156,6 +161,9 @@ class SessionController extends Controller
             }
             $session->update(['fallback_session_id' => $fallback?->id]);
         } else {
+            if (filled($data['app_id'] ?? null)) {
+                $session->cloudConfig()->update(['app_id' => $data['app_id']]);
+            }
             $credentials = array_filter([
                 'waba_id' => $data['waba_id'] ?? null,
                 'phone_number_id' => $data['phone_number_id'] ?? null,

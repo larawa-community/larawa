@@ -1,0 +1,338 @@
+<?php
+
+namespace App\Http\Controllers\Dashboard;
+
+use App\Http\Controllers\Controller;
+use App\Models\WhatsappMessageTemplate;
+use App\Models\WhatsappSession;
+use App\Services\AuditLogger;
+use App\Services\MessageSender;
+use App\Services\MetaWhatsappTemplateService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
+
+class CloudTemplateController extends Controller
+{
+    public function index(Request $request, WhatsappSession $session): View
+    {
+        $this->authorizeCloudSession($request, $session, 'cloud-templates.view');
+
+        return $this->render($request, $session);
+    }
+
+    public function create(Request $request, WhatsappSession $session): View
+    {
+        $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
+
+        return $this->render($request, $session, editorMode: 'create');
+    }
+
+    public function edit(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template): View
+    {
+        $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
+        $this->assertTemplateBelongsToSession($template, $session);
+
+        return $this->render($request, $session, $template, 'edit');
+    }
+
+    public function sync(
+        Request $request,
+        WhatsappSession $session,
+        MetaWhatsappTemplateService $templates,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
+        $synced = $templates->sync($session);
+        $audit->log(
+            'cloud_templates.synced',
+            $workspace,
+            $request->user(),
+            auditable: $session,
+            metadata: ['template_count' => $synced->count()],
+            request: $request,
+        );
+
+        return back()->with('status', $synced->count().' templates synchronized with Meta.');
+    }
+
+    public function store(
+        Request $request,
+        WhatsappSession $session,
+        MetaWhatsappTemplateService $templates,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
+        $template = $templates->create($session, $this->templatePayload($request, $templates));
+        $audit->log('cloud_template.created', $workspace, $request->user(), auditable: $template, request: $request);
+
+        return redirect()->route('dashboard.sessions.templates.index', $session)
+            ->with('status', 'Template submitted to Meta for review.');
+    }
+
+    public function update(
+        Request $request,
+        WhatsappSession $session,
+        WhatsappMessageTemplate $template,
+        MetaWhatsappTemplateService $templates,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
+        $this->assertTemplateBelongsToSession($template, $session);
+        $template = $templates->update($session, $template, $this->templatePayload($request, $templates, true));
+        $audit->log('cloud_template.updated', $workspace, $request->user(), auditable: $template, request: $request);
+
+        return redirect()->route('dashboard.sessions.templates.index', $session)
+            ->with('status', 'Template changes submitted to Meta for review.');
+    }
+
+    public function send(
+        Request $request,
+        WhatsappSession $session,
+        WhatsappMessageTemplate $template,
+        MessageSender $sender,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
+        $this->assertTemplateBelongsToSession($template, $session);
+        abort_unless($template->status === 'APPROVED' && $template->is_active, 422, 'Only active approved templates can be sent.');
+        $data = $request->validate([
+            'to' => ['required', 'string', 'max:80'],
+            'parameters' => ['nullable', 'array'],
+            'parameters.*' => ['nullable', 'string', 'max:4096'],
+        ]);
+        $components = self::sendComponents($template, $data['parameters'] ?? []);
+        $result = $sender->send($workspace, $session, array_filter([
+            'type' => 'template',
+            'to' => $data['to'],
+            'name' => $template->name,
+            'language' => $template->language,
+            'components' => $components,
+        ], fn ($value) => $value !== []));
+
+        $audit->log(
+            $result->failed() ? 'cloud_template.send_failed' : 'cloud_template.sent',
+            $workspace,
+            $request->user(),
+            auditable: $result->message,
+            metadata: ['template_id' => $template->id],
+            request: $request,
+        );
+
+        if ($result->failed()) {
+            return back()->withInput()->with('error', $result->error);
+        }
+
+        return back()->with('status', 'Template message queued for delivery.');
+    }
+
+    public static function parameterFields(WhatsappMessageTemplate $template): array
+    {
+        $fields = [];
+
+        foreach ($template->components ?: [] as $component) {
+            $type = strtoupper((string) ($component['type'] ?? ''));
+            if ($type === 'BODY') {
+                preg_match_all('/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*|\d+)\s*\}\}/', (string) ($component['text'] ?? ''), $matches);
+                foreach (array_values(array_unique($matches[1] ?? [])) as $position => $variable) {
+                    $fields[] = [
+                        'key' => 'body_'.$variable,
+                        'label' => ctype_digit($variable) ? 'Body value '.($position + 1) : str_replace('_', ' ', ucfirst($variable)),
+                        'component' => 'body',
+                        'variable' => $variable,
+                        'parameter_name' => ctype_digit($variable) ? null : $variable,
+                    ];
+                }
+            }
+
+            if ($type === 'HEADER') {
+                $format = strtoupper((string) ($component['format'] ?? 'TEXT'));
+                if ($format !== 'TEXT' || str_contains((string) ($component['text'] ?? ''), '{{')) {
+                    $fields[] = [
+                        'key' => 'header',
+                        'label' => $format === 'TEXT' ? 'Header value' : ucfirst(strtolower($format)).' public URL',
+                        'component' => 'header',
+                        'format' => strtolower($format),
+                    ];
+                }
+            }
+
+            if ($type === 'BUTTONS') {
+                foreach (($component['buttons'] ?? []) as $index => $button) {
+                    if (strtoupper((string) ($button['type'] ?? '')) === 'URL' && str_contains((string) ($button['url'] ?? ''), '{{')) {
+                        $fields[] = [
+                            'key' => 'button_'.$index,
+                            'label' => ($button['text'] ?? 'Button '.($index + 1)).' URL value',
+                            'component' => 'button',
+                            'index' => $index,
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $fields;
+    }
+
+    public static function sendComponents(WhatsappMessageTemplate $template, array $parameters): array
+    {
+        $components = [];
+        $body = [];
+
+        foreach (self::parameterFields($template) as $field) {
+            $value = trim((string) ($parameters[$field['key']] ?? ''));
+            if ($value === '') {
+                throw ValidationException::withMessages([
+                    'parameters.'.$field['key'] => $field['label'].' is required for this template.',
+                ]);
+            }
+
+            if ($field['component'] === 'body') {
+                $parameter = ['type' => 'text', 'text' => $value];
+                if ($field['parameter_name']) {
+                    $parameter['parameter_name'] = $field['parameter_name'];
+                }
+                $body[] = $parameter;
+            } elseif ($field['component'] === 'header') {
+                $format = $field['format'];
+                $parameter = $format === 'text'
+                    ? ['type' => 'text', 'text' => $value]
+                    : ['type' => $format, $format => ['link' => $value]];
+                $components[] = ['type' => 'header', 'parameters' => [$parameter]];
+            } else {
+                $components[] = [
+                    'type' => 'button',
+                    'sub_type' => 'url',
+                    'index' => (string) $field['index'],
+                    'parameters' => [['type' => 'text', 'text' => $value]],
+                ];
+            }
+        }
+
+        if ($body !== []) {
+            array_unshift($components, ['type' => 'body', 'parameters' => $body]);
+        }
+
+        return $components;
+    }
+
+    private function render(
+        Request $request,
+        WhatsappSession $session,
+        ?WhatsappMessageTemplate $editingTemplate = null,
+        ?string $editorMode = null,
+    ): View {
+        return view('dashboard.sessions.cloud', [
+            'workspace' => $session->workspace,
+            'session' => $session,
+            'activeSection' => 'templates',
+            'templates' => $session->messageTemplates()->orderBy('name')->orderBy('language')->paginate(30),
+            'editingTemplate' => $editingTemplate,
+            'editorMode' => $editorMode,
+            'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
+            'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
+        ]);
+    }
+
+    private function templatePayload(Request $request, MetaWhatsappTemplateService $templates, bool $updating = false): array
+    {
+        $input = $request->validate([
+            'name' => [$updating ? 'nullable' : 'required', 'string', 'max:512'],
+            'language' => [$updating ? 'nullable' : 'required', 'string', 'max:35'],
+            'category' => ['required', 'in:UTILITY,MARKETING'],
+            'parameter_format' => ['required', 'in:POSITIONAL,NAMED'],
+            'header_type' => ['required', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
+            'header_text' => ['nullable', 'string', 'max:60'],
+            'header_example_text' => ['nullable', 'string', 'max:60'],
+            'header_sample_media' => ['nullable', 'file', 'max:20480'],
+            'body_text' => ['required', 'string', 'max:1024'],
+            'body_example_values' => ['nullable', 'string', 'max:8192'],
+            'body_named_examples' => ['nullable', 'string', 'max:8192'],
+            'footer_text' => ['nullable', 'string', 'max:60'],
+            'buttons' => ['nullable', 'array', 'max:3'],
+            'buttons.*.type' => ['nullable', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
+            'buttons.*.text' => ['nullable', 'string', 'max:25'],
+            'buttons.*.url' => ['nullable', 'string', 'max:2000'],
+            'buttons.*.example' => ['nullable', 'string', 'max:2000'],
+            'buttons.*.phone_number' => ['nullable', 'string', 'max:40'],
+        ]);
+
+        $header = null;
+        if (($input['header_type'] ?? 'NONE') !== 'NONE') {
+            $header = array_filter([
+                'type' => $input['header_type'],
+                'text' => $input['header_text'] ?? null,
+                'example_text' => $input['header_example_text'] ?? null,
+            ], fn ($value) => filled($value));
+
+            if ($request->hasFile('header_sample_media')) {
+                $file = $request->file('header_sample_media');
+                $header['sample_media'] = [
+                    'filename' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+                    'data_base64' => base64_encode($file->get()),
+                ];
+            }
+        }
+
+        $body = ['text' => $input['body_text']];
+        $examples = $this->lines($input['body_example_values'] ?? '');
+        if ($examples !== []) {
+            $body['example_values'] = $examples;
+        }
+        $namedExamples = collect($this->lines($input['body_named_examples'] ?? ''))
+            ->map(function (string $line): ?array {
+                [$name, $example] = array_pad(explode('=', $line, 2), 2, null);
+
+                return filled($name) && filled($example)
+                    ? ['param_name' => trim($name), 'example' => trim($example)]
+                    : null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+        if ($namedExamples !== []) {
+            $body['example_named_parameters'] = $namedExamples;
+        }
+
+        $payload = array_filter([
+            'name' => $updating ? null : ($input['name'] ?? null),
+            'language' => $updating ? null : ($input['language'] ?? null),
+            'category' => $input['category'],
+            'parameter_format' => $input['parameter_format'],
+            'header' => $header,
+            'body' => $body,
+            'footer' => filled($input['footer_text'] ?? null) ? ['text' => $input['footer_text']] : null,
+            'buttons' => collect($input['buttons'] ?? [])
+                ->filter(fn (array $button) => filled($button['type'] ?? null) && filled($button['text'] ?? null))
+                ->map(fn (array $button) => array_filter(Arr::only($button, ['type', 'text', 'url', 'example', 'phone_number']), fn ($value) => filled($value)))
+                ->values()
+                ->all(),
+        ], fn ($value) => $value !== null && $value !== []);
+
+        return Validator::make($payload, $templates->rules($updating))->validate();
+    }
+
+    private function lines(string $value): array
+    {
+        return collect(preg_split('/\R/', $value) ?: [])->map(fn ($line) => trim($line))->filter()->values()->all();
+    }
+
+    private function authorizeCloudSession(Request $request, WhatsappSession $session, string $ability)
+    {
+        $workspace = $this->workspace($request);
+        $this->authorizeWorkspace($request, $ability, $session->workspace);
+        abort_unless($session->workspace_id === $workspace->id, 404);
+        abort_unless($session->isCloudApi(), 404);
+
+        return $workspace;
+    }
+
+    private function assertTemplateBelongsToSession(WhatsappMessageTemplate $template, WhatsappSession $session): void
+    {
+        abort_unless($template->whatsapp_cloud_config_id === $session->cloudConfig?->id, 404);
+    }
+}

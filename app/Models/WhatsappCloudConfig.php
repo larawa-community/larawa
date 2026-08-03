@@ -6,12 +6,13 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 
 class WhatsappCloudConfig extends Model
 {
-    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'access_token', 'app_secret', 'verify_token'];
+    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'app_id', 'access_token', 'app_secret', 'verify_token'];
 
     protected $hidden = ['access_token', 'app_secret', 'verify_token'];
 
@@ -25,6 +26,11 @@ class WhatsappCloudConfig extends Model
     public function whatsappSession(): BelongsTo
     {
         return $this->belongsTo(WhatsappSession::class);
+    }
+
+    public function messageTemplates(): HasMany
+    {
+        return $this->hasMany(WhatsappMessageTemplate::class);
     }
 
     public function isConfigured(): bool

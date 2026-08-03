@@ -112,6 +112,8 @@ Start with the PostgreSQL profile:
 COMPOSE_PROFILES=postgres docker compose up -d --build
 ```
 
+PostgreSQL stores its cluster in the named `larawa_postgres` volume. Rebuilding images, recreating containers, and running `docker compose up -d --build` reuse that volume and do not reset LaraWA data. Application upgrades must use `php artisan migrate --force`; never use `migrate:fresh`, `migrate:refresh`, or table truncation against a live installation. Do not run `docker compose down -v`, `docker volume rm`, or volume-pruning commands for a production LaraWA project because those commands explicitly delete the database volume. Back up the PostgreSQL volume and the persistent `APP_KEY` before moving the installation to another host.
+
 Redis is included by default. To use it for queues, cache, and sessions with PostgreSQL, start from the Redis plus PostgreSQL example:
 
 ```bash
@@ -143,6 +145,8 @@ Session `Stop`/`POST /api/v1/sessions/{session}/disconnect` unregisters the acti
 - `sessions:write`: create/delete sessions.
 - `messages:read`: list message logs.
 - `messages:send`: send text, media, reactions, and bulk messages.
+- `templates:read`: list the locally cached Meta template catalog.
+- `templates:write`: synchronize, create, and edit Meta templates.
 - `webhooks:read`: list webhooks.
 - `webhooks:write`: create, update, delete, test, retry, and rotate webhook secrets.
 - `api-keys:read`: list API keys through the REST API.
@@ -223,6 +227,12 @@ https://your-larawa-host.example/api/meta/whatsapp/webhook/{session-uuid}
 After Meta accepts the callback URL and generated token, enter the WABA ID, phone number ID, long-lived system-user access token, and app secret on the LaraWA session page. Saving validates these settings through Graph API and discovers the display phone number from Meta; users do not enter the display phone number. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY`; access tokens and app secrets are never returned by the API.
 
 The access token and phone number ID authorize and address Graph API message sends. The Meta App Secret is not sent to the `/messages` endpoint; LaraWA uses it locally to validate the `X-Hub-Signature-256` attached to webhook requests. Find the App Secret in **Meta App Dashboard → App settings → Basic**. It belongs to the Meta app, while LaraWA stores an encrypted copy on each Official session so callbacks remain session-scoped.
+
+Template management requires a system-user access token with `whatsapp_business_management`; message sends require `whatsapp_business_messaging`. Synchronization is explicit and follows every Meta result page. Cached templates that disappear remotely are retained as inactive so operational history is not destroyed. Creating or editing a template submits it for Meta review, and LaraWA caches statuses such as `PENDING`, `APPROVED`, `REJECTED`, `PAUSED`, and `DISABLED` without changing the Cloud session's connection state when template-management permission is missing.
+
+Text-header templates do not need an App ID. Image, video, and document header templates require sample media for Meta review, so configure the numeric Meta App ID on that Cloud session before creating them. LaraWA uploads the supplied sample through Meta's resumable upload API and stores only the returned handle in the template definition. Template names and languages cannot be edited; create a separate template when either must change. Remote template deletion and advanced Authentication, catalog, carousel, Flow, and location templates are not supported in this release.
+
+Incoming customer messages are grouped into a local conversation inbox. LaraWA uses Meta's provider timestamp—not a database insertion time—to open a 24-hour customer-service window. Workspace users may reply with free-form text while that window is open; after it closes, Meta-bound free-form sends are rejected locally and an active `APPROVED` template must be used. The inbox, session status, and template catalog refresh only when an operator requests it; Official Cloud API pages never run Wrapper-style QR polling.
 
 Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
 

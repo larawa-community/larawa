@@ -45,6 +45,8 @@ return [
         'sessions:write',
         'messages:read',
         'messages:send',
+        'templates:read',
+        'templates:write',
         'webhooks:read',
         'webhooks:write',
         'api-keys:read',

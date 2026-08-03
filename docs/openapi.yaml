@@ -135,6 +135,88 @@ components:
         body: { type: [string, "null"] }
         media_path: { type: [string, "null"] }
         mime_type: { type: [string, "null"] }
+    WhatsappConversation:
+      type: object
+      properties:
+        id: { type: integer }
+        workspace_id: { type: integer }
+        whatsapp_session_id: { type: integer }
+        customer_wa_id: { type: string, example: "12025550100" }
+        customer_name: { type: [string, "null"], example: Ada Lovelace }
+        latest_inbound_at: { type: [string, "null"], format: date-time }
+        latest_message_at: { type: [string, "null"], format: date-time }
+        service_window_expires_at: { type: [string, "null"], format: date-time }
+        service_window_open: { type: boolean }
+        messages_count: { type: integer }
+    WhatsappMessageTemplate:
+      type: object
+      properties:
+        id: { type: integer }
+        meta_template_id: { type: [string, "null"] }
+        name: { type: string }
+        language: { type: string }
+        category: { type: string, enum: [UTILITY, MARKETING] }
+        parameter_format: { type: [string, "null"], enum: [POSITIONAL, NAMED, null] }
+        components: { type: array, items: { type: object } }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, PAUSED, DISABLED] }
+        quality_score: { type: [string, "null"] }
+        rejection_reason: { type: [string, "null"] }
+        last_synced_at: { type: [string, "null"], format: date-time }
+        is_active: { type: boolean }
+    WhatsappTemplateInput:
+      type: object
+      required: [name, language, category, body]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9_]+$" }
+        language: { type: string, example: en_US }
+        category: { type: string, enum: [UTILITY, MARKETING] }
+        parameter_format: { type: string, enum: [POSITIONAL, NAMED], default: POSITIONAL }
+        header:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [TEXT, IMAGE, VIDEO, DOCUMENT] }
+            text: { type: string }
+            example_text: { type: string }
+            sample_media:
+              type: object
+              description: Required for media headers. The Cloud configuration must contain a Meta App ID.
+              required: [filename, mime_type, data_base64]
+              properties:
+                filename: { type: string }
+                mime_type: { type: string }
+                data_base64: { type: string }
+        body:
+          type: object
+          required: [text]
+          properties:
+            text: { type: string }
+            example_values: { type: array, items: { type: string } }
+            example_named_parameters:
+              type: array
+              items:
+                type: object
+                required: [param_name, example]
+                properties:
+                  param_name: { type: string }
+                  example: { type: string }
+        footer:
+          type: object
+          required: [text]
+          properties:
+            text: { type: string }
+        buttons:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [type, text]
+            properties:
+              type: { type: string, enum: [QUICK_REPLY, URL, PHONE_NUMBER] }
+              text: { type: string }
+              url: { type: string, description: Required for URL buttons; may include a Meta variable placeholder. }
+              example: { type: string }
+              phone_number: { type: string }
     Webhook:
       type: object
       properties:
@@ -166,7 +248,7 @@ components:
           type: array
           items:
             type: string
-            enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+            enum: ["*", sessions:read, sessions:write, messages:read, messages:send, templates:read, templates:write, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
         ip_allow_list:
           type: [array, "null"]
           items: { type: string }
@@ -252,6 +334,7 @@ paths:
                 fallback_session_uuid: { type: [string, "null"], format: uuid }
                 waba_id: { type: string }
                 phone_number_id: { type: string }
+                app_id: { type: [string, "null"], description: Required only for resumable sample-media uploads used by media-header templates. }
                 access_token: { type: string }
                 app_secret: { type: string }
       responses:
@@ -676,6 +759,129 @@ paths:
       responses:
         "202": { description: Template accepted by Meta }
         "422": { description: Session or template payload is invalid }
+  /sessions/{session}/conversations:
+    get:
+      summary: List Official Cloud API customer conversations
+      description: Requires `messages:read`. Reads LaraWA's local inbox cache and never polls Meta. The service-window fields are derived from the customer's latest genuine inbound provider timestamp.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Paginated customer conversations }
+        "404": { description: Session is not an Official Cloud API session in this workspace }
+  /sessions/{session}/conversations/{conversation}:
+    get:
+      summary: Read an Official Cloud API conversation
+      description: Requires `messages:read`. Returns the local conversation and its paginated message history.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Conversation and messages }
+        "404": { description: Conversation does not belong to the session/workspace }
+  /sessions/{session}/conversations/{conversation}/messages/text:
+    post:
+      summary: Reply with free-form text inside the customer-service window
+      description: Requires `messages:send`. A customer inbound message opens the window for 24 hours. Closed-window requests are rejected before calling Meta and must use an approved template instead.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 4096 }
+                idempotency_key: { type: string, maxLength: 120 }
+      responses:
+        "202": { description: Reply accepted by Meta }
+        "422": { description: Customer service window is closed (`customer_service_window_closed`) }
+  /sessions/{session}/conversations/{conversation}/messages/template:
+    post:
+      summary: Send an approved cached template to a conversation
+      description: Requires `messages:send`. Active approved templates can be sent whether the customer-service window is open or closed.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: conversation, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_id]
+              properties:
+                template_id: { type: integer }
+                components: { type: array, items: { type: object } }
+                idempotency_key: { type: string, maxLength: 120 }
+      responses:
+        "202": { description: Template accepted by Meta }
+        "404": { description: Conversation or approved template does not belong to this session }
+  /sessions/{session}/templates:
+    get:
+      summary: List cached Meta message templates
+      description: Requires `templates:read` and an Official Cloud API session. This endpoint reads the local cache and never contacts Meta.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string, enum: [UTILITY, MARKETING] } }
+        - { name: language, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Paginated cached templates }
+        "422": { description: Templates are not available for this session type }
+    post:
+      summary: Create a Meta message template
+      description: Requires `templates:write`, an Official Cloud API session, and `whatsapp_business_management`. The returned status normally remains pending until Meta review. Media headers additionally require the Meta App ID configured on the session.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhatsappTemplateInput" }
+      responses:
+        "201": { description: Template submitted to Meta and cached }
+        "422": { description: Invalid template or normalized Meta Graph API error }
+  /sessions/{session}/templates/sync:
+    post:
+      summary: Synchronize templates from Meta
+      description: Requires `templates:write`. Follows all Meta pages and marks remotely missing cached templates inactive without deleting history.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Cached template catalog after synchronization }
+        "422": { description: Cloud credentials are incomplete or Meta rejected the operation }
+  /sessions/{session}/templates/{template}:
+    patch:
+      summary: Edit a Meta message template
+      description: Requires `templates:write`. Template name and language are immutable. Send the complete body whenever changing components; Meta review restrictions still apply.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: template, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Name and language are immutable. Category may be changed alone. Component edits use the same header/body/footer/buttons shapes as WhatsappTemplateInput and must include the complete body.
+              properties:
+                category: { type: string, enum: [UTILITY, MARKETING] }
+                parameter_format: { type: string, enum: [POSITIONAL, NAMED] }
+                header: { type: object }
+                body: { type: object }
+                footer: { type: object }
+                buttons: { type: array, maxItems: 10, items: { type: object } }
+      responses:
+        "200": { description: Template edit submitted to Meta and cached }
+        "404": { description: Template does not belong to the session/workspace }
+        "422": { description: Invalid edit or normalized Meta Graph API error }
   /sessions/{session}/messages/bulk:
     post:
       summary: Send bulk text or media messages
@@ -982,7 +1188,7 @@ paths:
                   minItems: 1
                   items:
                     type: string
-                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, templates:read, templates:write, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
                 ip_allow_list:
                   type: array
                   items: { type: string }
@@ -1031,7 +1237,7 @@ paths:
                   minItems: 1
                   items:
                     type: string
-                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
+                    enum: ["*", sessions:read, sessions:write, messages:read, messages:send, templates:read, templates:write, webhooks:read, webhooks:write, api-keys:read, api-keys:write]
                 ip_allow_list:
                   type: [array, "null"]
                   items: { type: string }

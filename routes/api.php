@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\ApiKeyController;
+use App\Http\Controllers\Api\CloudConversationController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\SessionDiscoveryController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\WebhookDeliveryController;
+use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Internal\WorkerEventController;
 use App\Http\Controllers\MessageMediaController;
 use App\Http\Controllers\MetaWhatsappWebhookController;
@@ -35,6 +37,16 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
     Route::post('/sessions/{session}/messages/reaction', [MessageController::class, 'sendReaction'])->middleware('api.key:messages:send');
     Route::post('/sessions/{session}/messages/template', [MessageController::class, 'sendTemplate'])->middleware('api.key:messages:send');
     Route::post('/sessions/{session}/messages/bulk', [MessageController::class, 'bulk'])->middleware('api.key:messages:send');
+
+    Route::get('/sessions/{session}/conversations', [CloudConversationController::class, 'index'])->middleware('api.key:messages:read');
+    Route::get('/sessions/{session}/conversations/{conversation}', [CloudConversationController::class, 'show'])->middleware('api.key:messages:read');
+    Route::post('/sessions/{session}/conversations/{conversation}/messages/text', [CloudConversationController::class, 'reply'])->middleware('api.key:messages:send');
+    Route::post('/sessions/{session}/conversations/{conversation}/messages/template', [CloudConversationController::class, 'sendTemplate'])->middleware('api.key:messages:send');
+
+    Route::get('/sessions/{session}/templates', [WhatsappTemplateController::class, 'index'])->middleware('api.key:templates:read');
+    Route::post('/sessions/{session}/templates/sync', [WhatsappTemplateController::class, 'sync'])->middleware('api.key:templates:write');
+    Route::post('/sessions/{session}/templates', [WhatsappTemplateController::class, 'store'])->middleware('api.key:templates:write');
+    Route::patch('/sessions/{session}/templates/{template}', [WhatsappTemplateController::class, 'update'])->middleware('api.key:templates:write');
 
     Route::get('/webhooks', [WebhookController::class, 'index'])->middleware('api.key:webhooks:read');
     Route::post('/webhooks', [WebhookController::class, 'store'])->middleware('api.key:webhooks:write');

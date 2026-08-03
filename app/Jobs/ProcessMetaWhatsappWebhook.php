@@ -6,12 +6,15 @@ use App\Events\Messages\MessageDeliveryFailed;
 use App\Models\Message;
 use App\Models\MetaWebhookReceipt;
 use App\Models\WhatsappCloudConfig;
+use App\Models\WhatsappConversation;
 use App\Services\MessageFallbackManager;
 use App\Services\MessageMediaStore;
 use App\Services\Messaging\CloudApiWhatsappTransport;
 use App\Services\WebhookDispatcher;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class ProcessMetaWhatsappWebhook implements ShouldQueue
@@ -67,6 +70,23 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
             return;
         }
 
+        $customerWaId = preg_replace('/\D+/', '', (string) ($incoming['from'] ?? '')) ?: '';
+        if ($customerWaId === '') {
+            return;
+        }
+        $contact = collect($value['contacts'] ?? [])->first(
+            fn ($contact) => (string) ($contact['wa_id'] ?? '') === $customerWaId
+        );
+        $incomingAt = isset($incoming['timestamp']) && is_numeric($incoming['timestamp'])
+            ? Carbon::createFromTimestampUTC((int) $incoming['timestamp'])
+            : null;
+        $conversation = $this->upsertConversation(
+            $session,
+            $customerWaId,
+            data_get($contact, 'profile.name'),
+            $incomingAt,
+        );
+
         $content = is_array($incoming[$type] ?? null) ? $incoming[$type] : [];
         $payload = [
             'message_id' => $messageId,
@@ -98,6 +118,7 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
         $message->fill([
             'whatsapp_session_id' => $session->id,
             'transport_session_id' => $session->id,
+            'conversation_id' => $conversation->id,
             'direction' => 'incoming',
             'type' => $type,
             'status' => 'received',
@@ -112,6 +133,38 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
         if ($isNew) {
             $webhooks->dispatch($session->workspace, 'message.received', ['session' => $session, 'payload' => $payload]);
         }
+    }
+
+    private function upsertConversation($session, string $customerWaId, ?string $customerName, ?Carbon $incomingAt): WhatsappConversation
+    {
+        return DB::transaction(function () use ($session, $customerWaId, $customerName, $incomingAt): WhatsappConversation {
+            WhatsappConversation::query()->insertOrIgnore([
+                'workspace_id' => $session->workspace_id,
+                'whatsapp_session_id' => $session->id,
+                'customer_wa_id' => $customerWaId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $conversation = WhatsappConversation::query()
+                ->where('whatsapp_session_id', $session->id)
+                ->where('customer_wa_id', $customerWaId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (filled($customerName)) {
+                $conversation->customer_name = $customerName;
+            }
+            if ($incomingAt && (! $conversation->latest_inbound_at || $incomingAt->isAfter($conversation->latest_inbound_at))) {
+                $conversation->latest_inbound_at = $incomingAt;
+                $conversation->service_window_expires_at = $incomingAt->copy()->addHours(24);
+            }
+            if ($incomingAt && (! $conversation->latest_message_at || $incomingAt->isAfter($conversation->latest_message_at))) {
+                $conversation->latest_message_at = $incomingAt;
+            }
+            $conversation->save();
+
+            return $conversation;
+        });
     }
 
     private function recordStatus($session, array $status, WebhookDispatcher $webhooks, MessageFallbackManager $fallbacks): void

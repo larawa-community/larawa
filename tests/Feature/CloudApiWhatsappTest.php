@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Message;
 use App\Models\MetaWebhookReceipt;
 use App\Models\User;
+use App\Models\WhatsappConversation;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\ApiKeyService;
@@ -324,6 +325,14 @@ class CloudApiWhatsappTest extends TestCase
             'access_token' => 'cloud-token',
             'app_secret' => 'app-secret',
             'verify_token' => 'verify-token-1234',
+        ]);
+        WhatsappConversation::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'customer_wa_id' => '15551234567',
+            'latest_inbound_at' => now(),
+            'latest_message_at' => now(),
+            'service_window_expires_at' => now()->addHours(24),
         ]);
 
         return $session->load('cloudConfig');

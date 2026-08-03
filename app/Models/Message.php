@@ -15,6 +15,7 @@ class Message extends Model
         'workspace_id',
         'whatsapp_session_id',
         'transport_session_id',
+        'conversation_id',
         'wa_message_id',
         'idempotency_key',
         'direction',
@@ -51,6 +52,11 @@ class Message extends Model
     public function transportSession(): BelongsTo
     {
         return $this->belongsTo(WhatsappSession::class, 'transport_session_id');
+    }
+
+    public function conversation(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappConversation::class, 'conversation_id');
     }
 
     public function fallbackAttempts(): HasMany
