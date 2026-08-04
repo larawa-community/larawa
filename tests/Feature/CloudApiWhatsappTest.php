@@ -372,6 +372,7 @@ class CloudApiWhatsappTest extends TestCase
             ->assertSee('data-cloud-inbox-image-viewer', false)
             ->assertSee('data-cloud-inbox-image-zoom-in', false)
             ->assertSee('data-cloud-inbox-image-zoom-out', false)
+            ->assertSee('absolute inset-0 m-auto', false)
             ->assertSee('data-cloud-inbox-media-video', false)
             ->assertSee('data-cloud-inbox-media-audio', false)
             ->assertSee('Voice message');

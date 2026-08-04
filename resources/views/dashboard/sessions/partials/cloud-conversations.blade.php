@@ -213,7 +213,7 @@
                 </div>
             </header>
             <div class="relative min-h-0 flex-1 touch-none select-none overflow-hidden bg-[radial-gradient(circle_at_center,#1e293b_0%,#020617_72%)]" data-cloud-inbox-image-stage>
-                <img alt="" class="pointer-events-none absolute left-1/2 top-1/2 max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 object-contain will-change-transform sm:max-h-[calc(100%-3rem)] sm:max-w-[calc(100%-3rem)]" data-cloud-inbox-image-viewer-image>
+                <img alt="" class="pointer-events-none absolute inset-0 m-auto max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] object-contain will-change-transform sm:max-h-[calc(100%-3rem)] sm:max-w-[calc(100%-3rem)]" data-cloud-inbox-image-viewer-image>
             </div>
         </div>
     </dialog>

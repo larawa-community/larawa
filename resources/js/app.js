@@ -822,7 +822,7 @@ if (cloudInbox) {
 
     function renderImageTransform() {
         if (!imageViewerImage) return;
-        imageViewerImage.style.transform = `translate(-50%, -50%) translate(${imagePanX}px, ${imagePanY}px) scale(${imageZoom})`;
+        imageViewerImage.style.transform = `translate(${imagePanX}px, ${imagePanY}px) scale(${imageZoom})`;
         if (imageZoomLabel) imageZoomLabel.textContent = `${Math.round(imageZoom * 100)}%`;
         if (imageZoomOut) imageZoomOut.disabled = imageZoom <= 0.5;
         if (imageZoomIn) imageZoomIn.disabled = imageZoom >= 4;
