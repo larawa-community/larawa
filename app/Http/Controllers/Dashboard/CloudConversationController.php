@@ -10,6 +10,7 @@ use App\Services\MessageSender;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
@@ -75,10 +76,16 @@ class CloudConversationController extends Controller
                 ? $this->latestMessages($selected)->map(fn ($message) => [
                     'id' => $message->id,
                     'direction' => $message->direction,
+                    'type' => $message->type,
                     'body' => $message->body ?: ucfirst($message->type).' message',
                     'status' => $message->status,
                     'created_at_label' => $message->created_at?->format('M j, H:i'),
-                    'media_url' => $message->media_path ? route('dashboard.messages.media', $message) : null,
+                    'mime_type' => $message->mime_type,
+                    'filename' => data_get($message->payload, 'filename'),
+                    'media_url' => $message->media_path
+                        ? route('dashboard.messages.media', array_filter(['message' => $message, 'preview' => $message->type === 'image' ? 1 : null]))
+                        : null,
+                    'download_url' => $message->media_path ? route('dashboard.messages.media', $message) : null,
                 ])->values()
                 : [],
         ]);
@@ -125,6 +132,67 @@ class CloudConversationController extends Controller
         return back();
     }
 
+    public function replyMedia(
+        Request $request,
+        WhatsappSession $session,
+        WhatsappConversation $conversation,
+        MessageSender $sender,
+        AuditLogger $audit,
+    ): RedirectResponse {
+        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
+        $this->assertConversationBelongsToSession($conversation, $session);
+        $maxKilobytes = max(1, (int) ceil(config('larawa.media_base64_max_bytes') / 1024));
+        $data = $request->validate([
+            'attachment' => [
+                'required',
+                File::types(['jpg', 'jpeg', 'png', 'pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
+                    ->max($maxKilobytes),
+            ],
+            'caption' => ['nullable', 'string', 'max:1024'],
+        ]);
+
+        if (! $conversation->serviceWindowIsOpen()) {
+            throw ValidationException::withMessages([
+                'attachment' => 'The 24-hour customer service window is closed. The customer must message this number again before you can reply.',
+            ]);
+        }
+
+        $file = $data['attachment'];
+        $mimeType = $this->uploadedMediaMimeType($file->getClientOriginalExtension(), $file->getMimeType());
+        $type = str_starts_with($mimeType, 'image/') ? 'image' : 'document';
+
+        if ($type === 'image' && $file->getSize() > 5 * 1024 * 1024) {
+            throw ValidationException::withMessages([
+                'attachment' => 'Images may not be larger than 5 MB.',
+            ]);
+        }
+
+        $contents = $file->get();
+        $result = $sender->send($workspace, $session, array_filter([
+            'type' => $type,
+            'to' => $conversation->customer_wa_id,
+            'media_base64' => base64_encode($contents),
+            'mime_type' => $mimeType,
+            'filename' => $file->getClientOriginalName(),
+            'caption' => $data['caption'] ?? null,
+        ], fn ($value) => $value !== null && $value !== ''));
+
+        $audit->log(
+            $result->failed() ? 'cloud_conversation.media_reply_failed' : 'cloud_conversation.media_replied',
+            $workspace,
+            $request->user(),
+            auditable: $result->message,
+            metadata: ['conversation_id' => $conversation->id, 'message_type' => $type],
+            request: $request,
+        );
+
+        if ($result->failed()) {
+            return back()->withInput()->with('error', $result->error);
+        }
+
+        return back();
+    }
+
     private function render(Request $request, WhatsappSession $session, ?WhatsappConversation $selected): View
     {
         $conversations = $this->conversationQuery($session)->paginate(30);
@@ -143,6 +211,23 @@ class CloudConversationController extends Controller
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
         ]);
+    }
+
+    private function uploadedMediaMimeType(string $extension, ?string $detectedMimeType): string
+    {
+        return match (strtolower($extension)) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'pdf' => 'application/pdf',
+            'txt' => 'text/plain',
+            'doc' => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls' => 'application/vnd.ms-excel',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt' => 'application/vnd.ms-powerpoint',
+            'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            default => $detectedMimeType ?: 'application/octet-stream',
+        };
     }
 
     private function authorizeCloudSession(Request $request, WhatsappSession $session, string $ability)
@@ -205,6 +290,7 @@ class CloudConversationController extends Controller
             'service_window_open' => $conversation->serviceWindowIsOpen(),
             'service_window_expires_label' => $conversation->service_window_expires_at?->format('M j, Y H:i T'),
             'reply_url' => route('dashboard.sessions.conversations.messages.text', [$session, $conversation]),
+            'media_reply_url' => route('dashboard.sessions.conversations.messages.media', [$session, $conversation]),
         ];
     }
 }

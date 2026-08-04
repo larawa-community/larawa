@@ -8,7 +8,9 @@ use App\Models\WhatsappConversation;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CloudDashboardTest extends TestCase
@@ -57,6 +59,8 @@ class CloudDashboardTest extends TestCase
             ->assertSee('data-cloud-inbox-mobile-detail="false"', false)
             ->assertSee('data-cloud-inbox', false)
             ->assertSee('data-cloud-inbox-reply-text', false)
+            ->assertSee('data-cloud-inbox-file-input', false)
+            ->assertSee('Attach image or document')
             ->assertSee('⌘ Enter')
             ->assertSee('Ctrl Enter')
             ->assertSee(route('dashboard.sessions.conversations.snapshot', ['session' => $session, 'selected' => $conversation->id]), false)
@@ -196,6 +200,59 @@ class CloudDashboardTest extends TestCase
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->get(route('dashboard.sessions.templates.create', $session))
             ->assertForbidden();
+    }
+
+    public function test_workspace_user_can_send_image_and_document_replies(): void
+    {
+        Storage::fake('local');
+        [$workspace, $session, $user] = $this->cloudSession('workspace_user');
+        $conversation = $this->conversation($workspace, $session, now()->addHours(20));
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard/media' => Http::sequence()
+                ->push(['id' => 'media.image'])
+                ->push(['id' => 'media.document']),
+            'https://graph.facebook.com/v25.0/phone-dashboard/messages' => Http::sequence()
+                ->push(['messages' => [['id' => 'wamid.dashboard.image']]])
+                ->push(['messages' => [['id' => 'wamid.dashboard.document']]]),
+        ]);
+
+        $image = UploadedFile::fake()->createWithContent(
+            'order.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+        );
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.conversations.messages.media', [$session, $conversation]), [
+                'attachment' => $image,
+                'caption' => 'Your order is ready.',
+            ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
+
+        $document = UploadedFile::fake()->createWithContent('invoice.pdf', "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.conversations.messages.media', [$session, $conversation]), [
+                'attachment' => $document,
+                'caption' => 'Invoice attached.',
+            ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
+
+        $imageMessage = Message::query()->where('wa_message_id', 'wamid.dashboard.image')->firstOrFail();
+        $documentMessage = Message::query()->where('wa_message_id', 'wamid.dashboard.document')->firstOrFail();
+
+        $this->assertSame('image', $imageMessage->type);
+        $this->assertSame('Your order is ready.', $imageMessage->body);
+        $this->assertSame('order.png', $imageMessage->payload['filename']);
+        $this->assertSame($conversation->id, $imageMessage->conversation_id);
+        $this->assertSame('document', $documentMessage->type);
+        $this->assertSame('Invoice attached.', $documentMessage->body);
+        $this->assertSame('invoice.pdf', $documentMessage->payload['filename']);
+        Storage::disk('local')->assertExists($imageMessage->media_path);
+        Storage::disk('local')->assertExists($documentMessage->media_path);
+
+        Http::assertSentCount(4);
     }
 
     public function test_cloud_settings_show_whatsapp_account_management_only_to_admins(): void

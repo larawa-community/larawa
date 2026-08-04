@@ -525,13 +525,23 @@ if (cloudInbox) {
     const liveStatus = cloudInbox.querySelector('[data-cloud-inbox-live-status]');
     const liveDot = cloudInbox.querySelector('[data-cloud-inbox-live-dot]');
     const liveLabel = cloudInbox.querySelector('[data-cloud-inbox-live-label]');
+    const composer = cloudInbox.querySelector('[data-cloud-inbox-composer]');
     const replyForm = cloudInbox.querySelector('[data-cloud-inbox-reply-form]');
     const replyText = cloudInbox.querySelector('[data-cloud-inbox-reply-text]');
+    const mediaForm = cloudInbox.querySelector('[data-cloud-inbox-media-form]');
+    const fileInput = cloudInbox.querySelector('[data-cloud-inbox-file-input]');
+    const filePreview = cloudInbox.querySelector('[data-cloud-inbox-file-preview]');
+    const fileName = cloudInbox.querySelector('[data-cloud-inbox-file-name]');
+    const fileMeta = cloudInbox.querySelector('[data-cloud-inbox-file-meta]');
+    const fileError = cloudInbox.querySelector('[data-cloud-inbox-file-error]');
+    const fileRemove = cloudInbox.querySelector('[data-cloud-inbox-file-remove]');
+    const mediaSubmit = cloudInbox.querySelector('[data-cloud-inbox-media-submit]');
     let timer = null;
     let inFlight = false;
     let failures = 0;
     let conversationSignature = null;
     let messageSignature = null;
+    let filePreviewUrl = null;
 
     function setLiveStatus(state) {
         const reconnecting = state === 'reconnecting';
@@ -618,17 +628,47 @@ if (cloudInbox) {
 
         const article = document.createElement('article');
         article.className = `max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] ${outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900'}`;
-        const body = document.createElement('div');
-        body.className = 'whitespace-pre-wrap break-words text-sm leading-6';
-        body.textContent = message.body;
-        article.append(body);
-
-        if (message.media_url) {
+        const hasImage = message.type === 'image' && message.media_url;
+        if (hasImage) {
             const media = document.createElement('a');
-            media.href = message.media_url;
-            media.className = 'mt-2 inline-flex text-xs font-semibold text-[#128c42]';
-            media.textContent = 'Download attachment';
+            media.href = message.download_url || message.media_url;
+            media.className = '-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100';
+            media.title = `Download ${message.filename || 'image'}`;
+            const image = document.createElement('img');
+            image.src = message.media_url;
+            image.alt = message.body || 'Shared image';
+            image.className = 'max-h-80 w-full object-cover';
+            image.loading = 'lazy';
+            media.append(image);
             article.append(media);
+        } else if (message.media_url) {
+            const media = document.createElement('a');
+            media.href = message.download_url || message.media_url;
+            media.className = 'flex min-w-0 items-center gap-3 rounded-xl border border-black/5 bg-white/70 p-3 transition hover:bg-white';
+
+            const icon = document.createElement('span');
+            icon.className = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white';
+            icon.innerHTML = '<svg viewBox="0 0 24 24" class="h-5 w-5 fill-none stroke-current" stroke-width="1.8" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7z"/><path d="M14 3.75v4h4M9.5 13h5M9.5 16h4"/></svg>';
+
+            const details = document.createElement('span');
+            details.className = 'min-w-0 flex-1';
+            const attachmentName = document.createElement('span');
+            attachmentName.className = 'block truncate text-sm font-semibold';
+            attachmentName.textContent = message.filename || 'Attachment';
+            const attachmentType = document.createElement('span');
+            attachmentType.className = 'mt-0.5 block text-[10px] uppercase text-slate-500';
+            attachmentType.textContent = `${message.mime_type || 'Document'} · Download`;
+            details.append(attachmentName, attachmentType);
+            media.append(icon, details);
+            article.append(media);
+        }
+
+        const shouldShowBody = message.body && (!message.media_url || message.body !== `${message.type?.charAt(0).toUpperCase()}${message.type?.slice(1)} message`);
+        if (shouldShowBody) {
+            const body = document.createElement('div');
+            body.className = `${message.media_url ? 'mt-2 ' : ''}whitespace-pre-wrap break-words text-sm leading-6`;
+            body.textContent = message.body;
+            article.append(body);
         }
 
         const meta = document.createElement('div');
@@ -650,7 +690,7 @@ if (cloudInbox) {
 
     function updateConversationMessages(messages) {
         if (!messageList) return;
-        const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.body, message.media_url]));
+        const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.type, message.body, message.media_url, message.filename]));
         if (messageSignature === nextSignature) return;
 
         const stayAtBottom = messageSignature === null || messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 96;
@@ -699,10 +739,60 @@ if (cloudInbox) {
         }
         if (replyForm) {
             replyForm.action = conversation.reply_url;
-            replyForm.classList.toggle('hidden', !isOpen);
-            replyForm.classList.toggle('flex', isOpen);
         }
+        if (mediaForm) mediaForm.action = conversation.media_reply_url;
+        composer?.classList.toggle('hidden', !isOpen);
+        composer?.classList.toggle('block', isOpen);
         replyClosed?.classList.toggle('hidden', isOpen);
+    }
+
+    function readableFileSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function resetAttachment() {
+        if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+        filePreviewUrl = null;
+        if (fileInput) fileInput.value = '';
+        mediaForm?.classList.add('hidden');
+        if (fileError) {
+            fileError.textContent = '';
+            fileError.classList.add('hidden');
+        }
+    }
+
+    function showAttachment(file) {
+        const maxBytes = Number(fileInput?.dataset.maxBytes || 0);
+        const imageMaxBytes = 5 * 1024 * 1024;
+        const exceedsLimit = (maxBytes > 0 && file.size > maxBytes) || (file.type.startsWith('image/') && file.size > imageMaxBytes);
+
+        mediaForm?.classList.remove('hidden');
+        if (fileName) fileName.textContent = file.name;
+        if (fileMeta) fileMeta.textContent = `${file.type.startsWith('image/') ? 'Image' : 'Document'} · ${readableFileSize(file.size)}`;
+        if (fileError) {
+            fileError.textContent = exceedsLimit
+                ? `This ${file.type.startsWith('image/') ? 'image' : 'file'} is too large. ${file.type.startsWith('image/') ? 'Images can be up to 5 MB.' : `Files can be up to ${readableFileSize(maxBytes)}.`}`
+                : '';
+            fileError.classList.toggle('hidden', !exceedsLimit);
+        }
+        if (mediaSubmit) mediaSubmit.disabled = exceedsLimit;
+
+        if (!filePreview) return;
+        if (filePreviewUrl) URL.revokeObjectURL(filePreviewUrl);
+        filePreviewUrl = null;
+        filePreview.replaceChildren();
+        if (file.type.startsWith('image/')) {
+            filePreviewUrl = URL.createObjectURL(file);
+            const image = document.createElement('img');
+            image.src = filePreviewUrl;
+            image.alt = '';
+            image.className = 'h-full w-full object-cover';
+            filePreview.append(image);
+        } else {
+            filePreview.innerHTML = '<svg viewBox="0 0 24 24" class="h-6 w-6 fill-none stroke-current" stroke-width="1.8" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7z"/><path d="M14 3.75v4h4"/></svg>';
+        }
     }
 
     function schedule(delay) {
@@ -763,6 +853,17 @@ if (cloudInbox) {
 
         event.preventDefault();
         replyForm?.requestSubmit();
+    });
+    fileInput?.addEventListener('change', () => {
+        const file = fileInput.files?.[0];
+        if (file) showAttachment(file);
+    });
+    fileRemove?.addEventListener('click', resetAttachment);
+    mediaForm?.addEventListener('submit', () => {
+        if (mediaSubmit) {
+            mediaSubmit.disabled = true;
+            mediaSubmit.textContent = 'Sending…';
+        }
     });
     if (messageList) {
         window.requestAnimationFrame(() => {

@@ -123,6 +123,7 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::post('/sessions/{session}/cloud-account/display-name/request', [CloudAccountController::class, 'requestDisplayName'])->name('.sessions.cloud-account.display-name.request');
         Route::post('/sessions/{session}/cloud-account/display-name/apply', [CloudAccountController::class, 'applyDisplayName'])->name('.sessions.cloud-account.display-name.apply');
         Route::post('/sessions/{session}/conversations/{conversation}/messages/text', [CloudConversationController::class, 'reply'])->name('.sessions.conversations.messages.text');
+        Route::post('/sessions/{session}/conversations/{conversation}/messages/media', [CloudConversationController::class, 'replyMedia'])->name('.sessions.conversations.messages.media');
         Route::get('/sessions/{session}/templates', [CloudTemplateController::class, 'index'])->name('.sessions.templates.index');
         Route::get('/sessions/{session}/templates/create', [CloudTemplateController::class, 'create'])->name('.sessions.templates.create');
         Route::post('/sessions/{session}/templates', [CloudTemplateController::class, 'store'])->name('.sessions.templates.store');

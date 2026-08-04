@@ -28,7 +28,9 @@ class MessageMediaController extends Controller
         abort_unless($this->isSiteAdmin($request) || $message->workspace_id === $workspace->id, 404);
         $workspace = $message->workspace;
 
-        $response = $this->download($message);
+        $response = $request->boolean('preview') && str_starts_with((string) $message->mime_type, 'image/')
+            ? $this->preview($message)
+            : $this->download($message);
         $audit->log('message.media_downloaded', $workspace, $request->user(), auditable: $message, request: $request);
 
         return $response;
@@ -45,6 +47,20 @@ class MessageMediaController extends Controller
             $message->media_path,
             $this->downloadName($message),
             array_filter(['Content-Type' => $message->mime_type])
+        );
+    }
+
+    private function preview(Message $message): StreamedResponse
+    {
+        abort_unless($message->media_path, 404, 'Message has no stored media.');
+
+        $disk = data_get($message->payload, 'media.disk') ?: config('filesystems.default');
+        abort_unless(Storage::disk($disk)->exists($message->media_path), 404, 'Stored media was not found.');
+
+        return Storage::disk($disk)->response(
+            $message->media_path,
+            $this->downloadName($message),
+            array_filter(['Content-Type' => $message->mime_type, 'Content-Disposition' => 'inline'])
         );
     }
 

@@ -87,9 +87,21 @@
                         @php $outgoing = $message->direction === 'outgoing'; @endphp
                         <div class="flex {{ $outgoing ? 'justify-end' : 'justify-start' }}">
                             <article class="max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] {{ $outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900' }}">
-                                <div class="whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body ?: ucfirst($message->type).' message' }}</div>
-                                @if ($message->media_path)
-                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="mt-2 inline-flex text-xs font-semibold text-[#128c42]">Download attachment</a>
+                                @if ($message->media_path && $message->type === 'image')
+                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100" title="Download {{ data_get($message->payload, 'filename', 'image') }}">
+                                        <img src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" alt="{{ $message->body ?: 'Shared image' }}" class="max-h-80 w-full object-cover" loading="lazy">
+                                    </a>
+                                    @if ($message->body)<div class="whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body }}</div>@endif
+                                @elseif ($message->media_path)
+                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="flex min-w-0 items-center gap-3 rounded-xl border border-black/5 bg-white/70 p-3 transition hover:bg-white">
+                                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+                                            <svg viewBox="0 0 24 24" class="h-5 w-5 fill-none stroke-current" stroke-width="1.8" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7z"/><path d="M14 3.75v4h4M9.5 13h5M9.5 16h4"/></svg>
+                                        </span>
+                                        <span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold">{{ data_get($message->payload, 'filename', 'Attachment') }}</span><span class="mt-0.5 block text-[10px] uppercase text-slate-500">{{ $message->mime_type ?: 'Document' }} · Download</span></span>
+                                    </a>
+                                    @if ($message->body)<div class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body }}</div>@endif
+                                @else
+                                    <div class="whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body ?: ucfirst($message->type).' message' }}</div>
                                 @endif
                                 <div class="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-500">
                                     <span>{{ $message->created_at?->format('M j, H:i') }}</span>
@@ -103,15 +115,40 @@
                 </div>
 
                 <footer class="shrink-0 border-t border-slate-200 bg-white p-3 sm:p-5">
-                    <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.text', [$session, $selectedConversation]) }}" class="{{ $windowOpen ? 'flex' : 'hidden' }} flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-3" data-cloud-inbox-reply-form>
-                        @csrf
-                        <label class="min-w-0 flex-1">
-                            <span class="sr-only">Free-form reply</span>
-                            <textarea name="text" required maxlength="4096" rows="2" placeholder="Reply to the customer…" class="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15" data-cloud-inbox-reply-text>{{ old('text') }}</textarea>
-                            <span class="mt-1 hidden text-right text-[10px] text-slate-400 sm:block"><kbd class="font-sans">⌘ Enter</kbd> / <kbd class="font-sans">Ctrl Enter</kbd> to send</span>
-                        </label>
-                        <button class="w-full rounded-xl bg-[#128c42] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39] sm:w-auto" title="Send with Command+Enter or Ctrl+Enter">Send reply</button>
-                    </form>
+                    <div class="{{ $windowOpen ? 'block' : 'hidden' }}" data-cloud-inbox-composer>
+                        <form method="POST" enctype="multipart/form-data" action="{{ route('dashboard.sessions.conversations.messages.media', [$session, $selectedConversation]) }}" class="mb-3 hidden rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 shadow-sm" data-cloud-inbox-media-form>
+                            @csrf
+                            <input id="cloud-inbox-attachment" name="attachment" type="file" required class="sr-only" accept=".jpg,.jpeg,.png,.pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx" data-cloud-inbox-file-input data-max-bytes="{{ config('larawa.media_base64_max_bytes') }}">
+                            <div class="flex items-center gap-3">
+                                <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-emerald-200 bg-white text-[#128c42]" data-cloud-inbox-file-preview>
+                                    <svg viewBox="0 0 24 24" class="h-6 w-6 fill-none stroke-current" stroke-width="1.8" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7z"/><path d="M14 3.75v4h4"/></svg>
+                                </div>
+                                <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold text-slate-900" data-cloud-inbox-file-name></div><div class="mt-1 text-xs text-slate-500" data-cloud-inbox-file-meta></div></div>
+                                <button type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-slate-900" aria-label="Remove attachment" title="Remove attachment" data-cloud-inbox-file-remove>
+                                    <svg viewBox="0 0 24 24" class="h-5 w-5 fill-none stroke-current" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                                </button>
+                            </div>
+                            <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                                <input name="caption" maxlength="1024" placeholder="Add a caption (optional)" class="min-w-0 flex-1 rounded-xl border border-emerald-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
+                                <button class="rounded-xl bg-[#128c42] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0f7a39]" data-cloud-inbox-media-submit>Send attachment</button>
+                            </div>
+                            <p class="mt-2 hidden text-xs font-medium text-red-600" role="alert" data-cloud-inbox-file-error></p>
+                        </form>
+                        <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.text', [$session, $selectedConversation]) }}" class="flex items-end gap-2 sm:gap-3" data-cloud-inbox-reply-form>
+                            @csrf
+                            <label for="cloud-inbox-attachment" class="inline-flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[#128c42] focus-within:ring-4 focus-within:ring-[#25d366]/15" aria-label="Attach image or document" title="Attach image or document">
+                                <svg viewBox="0 0 24 24" class="h-5 w-5 fill-none stroke-current" stroke-width="1.9" aria-hidden="true"><path d="m20.5 11.5-8.7 8.7a5 5 0 0 1-7.1-7.1l9.4-9.4a3.5 3.5 0 0 1 5 5l-9.4 9.4a2 2 0 0 1-2.8-2.8l8.7-8.7"/></svg>
+                            </label>
+                            <label class="min-w-0 flex-1">
+                                <span class="sr-only">Free-form reply</span>
+                                <textarea name="text" required maxlength="4096" rows="1" placeholder="Reply to the customer…" class="block min-h-12 w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15" data-cloud-inbox-reply-text>{{ old('text') }}</textarea>
+                            </label>
+                            <button class="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#128c42] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0f7a39] sm:px-5" title="Send with Command+Enter or Ctrl+Enter">
+                                <span class="hidden sm:inline">Send</span><svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true"><path d="m3.4 20.4 18-8a.45.45 0 0 0 0-.8l-18-8a.45.45 0 0 0-.6.5L4.6 11H13v2H4.6l-1.8 6.9a.45.45 0 0 0 .6.5Z"/></svg>
+                            </button>
+                        </form>
+                        <p class="mt-2 hidden text-right text-[10px] text-slate-400 sm:block"><kbd class="font-sans">⌘ Enter</kbd> / <kbd class="font-sans">Ctrl Enter</kbd> to send</p>
+                    </div>
                     <div class="{{ $windowOpen ? 'hidden' : '' }} rounded-xl border border-amber-200 bg-amber-50 px-4 py-3" data-cloud-inbox-reply-closed>
                         <div class="text-sm font-semibold text-amber-900">Free-form reply unavailable</div>
                         <p class="mt-1 text-xs leading-5 text-amber-800">Replies are paused until the customer messages this number again.</p>
