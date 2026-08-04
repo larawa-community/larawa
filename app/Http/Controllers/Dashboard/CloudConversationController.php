@@ -178,9 +178,7 @@ class CloudConversationController extends Controller
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(200)
-            ->get()
-            ->reverse()
-            ->values();
+            ->get();
     }
 
     private function conversationData(WhatsappSession $session, WhatsappConversation $conversation): array

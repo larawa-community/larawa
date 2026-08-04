@@ -52,6 +52,9 @@ class CloudDashboardTest extends TestCase
             ->assertSee('Templates')
             ->assertSee('Settings')
             ->assertSee('data-cloud-inbox', false)
+            ->assertSee('data-cloud-inbox-reply-text', false)
+            ->assertSee('⌘ Enter')
+            ->assertSee('Ctrl Enter')
             ->assertSee(route('dashboard.sessions.conversations.snapshot', ['session' => $session, 'selected' => $conversation->id]), false)
             ->assertDontSee('Refresh inbox')
             ->assertDontSee('Send an approved template')
@@ -79,6 +82,17 @@ class CloudDashboardTest extends TestCase
             'body' => 'Updated invoice',
             'media_path' => 'messages/invoice.pdf',
         ]);
+        $newestMessage = Message::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'transport_session_id' => $session->id,
+            'conversation_id' => $selected->id,
+            'direction' => 'incoming',
+            'type' => 'text',
+            'status' => 'received',
+            'from' => $selected->customer_wa_id,
+            'body' => 'Newest message',
+        ]);
         $newest = WhatsappConversation::create([
             'workspace_id' => $workspace->id,
             'whatsapp_session_id' => $session->id,
@@ -98,13 +112,14 @@ class CloudDashboardTest extends TestCase
             ->assertOk()
             ->assertJsonPath('pagination.total', 2)
             ->assertJsonPath('conversations.0.id', $newest->id)
-            ->assertJsonPath('conversations.1.messages_count', 1)
+            ->assertJsonPath('conversations.1.messages_count', 2)
             ->assertJsonPath('selected.id', $selected->id)
             ->assertJsonPath('selected.service_window_open', true)
-            ->assertJsonPath('messages.0.id', $message->id)
-            ->assertJsonPath('messages.0.status', 'read')
-            ->assertJsonPath('messages.0.body', 'Updated invoice')
-            ->assertJsonPath('messages.0.media_url', route('dashboard.messages.media', $message));
+            ->assertJsonPath('messages.0.id', $newestMessage->id)
+            ->assertJsonPath('messages.0.body', 'Newest message')
+            ->assertJsonPath('messages.1.id', $message->id)
+            ->assertJsonPath('messages.1.status', 'read')
+            ->assertJsonPath('messages.1.media_url', route('dashboard.messages.media', $message));
     }
 
     public function test_conversation_snapshot_is_authenticated_and_rejects_cross_session_or_workspace_access(): void

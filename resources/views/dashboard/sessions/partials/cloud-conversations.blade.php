@@ -8,14 +8,14 @@
 @endphp
 
 <section
-    class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+    class="h-[calc(100dvh-19rem)] min-h-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
     data-cloud-inbox
     data-cloud-inbox-snapshot-url="{{ $snapshotUrl }}"
     data-cloud-inbox-selected-id="{{ $selectedConversation?->id }}"
 >
-    <div class="grid min-h-[680px] lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside class="border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
-            <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4">
+    <div class="grid h-full min-h-0 grid-rows-[minmax(200px,35%)_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-1">
+        <aside class="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
+            <div class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4">
                 <div>
                     <h3 class="font-semibold text-slate-900">Customer inbox</h3>
                     <p class="mt-0.5 text-xs text-slate-500"><span data-cloud-inbox-total>{{ $conversations->total() }}</span> conversations</p>
@@ -25,7 +25,7 @@
                     <span data-cloud-inbox-live-label>Live updates</span>
                 </div>
             </div>
-            <div class="max-h-[610px] divide-y divide-slate-200 overflow-y-auto" data-cloud-inbox-conversations>
+            <div class="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto" data-cloud-inbox-conversations>
                 @forelse ($conversations as $conversation)
                     @php $isOpen = $conversation->serviceWindowIsOpen(); @endphp
                     <a href="{{ route('dashboard.sessions.conversations.show', [$session, $conversation]) }}" class="block border-l-4 px-4 py-4 transition {{ $selectedConversation?->id === $conversation->id ? 'border-[#128c42] bg-white shadow-sm' : 'border-transparent hover:bg-white' }}">
@@ -50,13 +50,13 @@
                 @endforelse
             </div>
             @if ($conversations->hasPages())
-                <div class="border-t border-slate-200 bg-white px-4 py-3">{{ $conversations->links() }}</div>
+                <div class="shrink-0 border-t border-slate-200 bg-white px-4 py-3">{{ $conversations->links() }}</div>
             @endif
         </aside>
 
-        <div class="flex min-w-0 flex-col">
+        <div class="flex min-h-0 min-w-0 flex-col">
             @if ($selectedConversation)
-                <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <header class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
                     <div>
                         <h3 class="font-semibold text-slate-900" data-cloud-inbox-customer-name>{{ $selectedConversation->customer_name ?: 'WhatsApp customer' }}</h3>
                         <p class="mt-1 font-mono text-xs text-slate-500" data-cloud-inbox-customer-number>+{{ ltrim($selectedConversation->customer_wa_id, '+') }}</p>
@@ -69,7 +69,7 @@
                     </div>
                 </header>
 
-                <div class="flex-1 space-y-4 overflow-y-auto bg-[radial-gradient(circle_at_top_left,#f1faf5,transparent_42%)] px-4 py-6 sm:px-7" data-cloud-inbox-messages>
+                <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_top_left,#f1faf5,transparent_42%)] px-4 py-6 sm:px-7" data-cloud-inbox-messages>
                     @forelse ($conversationMessages as $message)
                         @php $outgoing = $message->direction === 'outgoing'; @endphp
                         <div class="flex {{ $outgoing ? 'justify-end' : 'justify-start' }}">
@@ -89,14 +89,15 @@
                     @endforelse
                 </div>
 
-                <footer class="border-t border-slate-200 bg-white p-4 sm:p-5">
+                <footer class="shrink-0 border-t border-slate-200 bg-white p-4 sm:p-5">
                     <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.text', [$session, $selectedConversation]) }}" class="{{ $windowOpen ? 'flex' : 'hidden' }} items-end gap-3" data-cloud-inbox-reply-form>
                         @csrf
                         <label class="min-w-0 flex-1">
                             <span class="sr-only">Free-form reply</span>
-                            <textarea name="text" required maxlength="4096" rows="2" placeholder="Reply to the customer…" class="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">{{ old('text') }}</textarea>
+                            <textarea name="text" required maxlength="4096" rows="2" placeholder="Reply to the customer…" class="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15" data-cloud-inbox-reply-text>{{ old('text') }}</textarea>
+                            <span class="mt-1 block text-right text-[10px] text-slate-400"><kbd class="font-sans">⌘ Enter</kbd> / <kbd class="font-sans">Ctrl Enter</kbd> to send</span>
                         </label>
-                        <button class="rounded-xl bg-[#128c42] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39]">Send reply</button>
+                        <button class="rounded-xl bg-[#128c42] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39]" title="Send with Command+Enter or Ctrl+Enter">Send reply</button>
                     </form>
                     <div class="{{ $windowOpen ? 'hidden' : '' }} rounded-xl border border-amber-200 bg-amber-50 px-4 py-3" data-cloud-inbox-reply-closed>
                         <div class="text-sm font-semibold text-amber-900">Free-form reply unavailable</div>

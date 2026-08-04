@@ -469,6 +469,8 @@ if (cloudInbox) {
     const liveStatus = cloudInbox.querySelector('[data-cloud-inbox-live-status]');
     const liveDot = cloudInbox.querySelector('[data-cloud-inbox-live-dot]');
     const liveLabel = cloudInbox.querySelector('[data-cloud-inbox-live-label]');
+    const replyForm = cloudInbox.querySelector('[data-cloud-inbox-reply-form]');
+    const replyText = cloudInbox.querySelector('[data-cloud-inbox-reply-text]');
     let timer = null;
     let inFlight = false;
     let failures = 0;
@@ -594,7 +596,9 @@ if (cloudInbox) {
         const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.body, message.media_url]));
         if (messageSignature === nextSignature) return;
 
-        const stayAtBottom = messageSignature === null || messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 96;
+        const stayAtTop = messageSignature === null || messageList.scrollTop < 96;
+        const previousScrollHeight = messageList.scrollHeight;
+        const previousScrollTop = messageList.scrollTop;
         messageSignature = nextSignature;
         messageList.replaceChildren();
 
@@ -607,11 +611,11 @@ if (cloudInbox) {
             messages.forEach((message) => messageList.append(renderConversationMessage(message)));
         }
 
-        if (stayAtBottom) {
-            window.requestAnimationFrame(() => {
-                messageList.scrollTop = messageList.scrollHeight;
-            });
-        }
+        window.requestAnimationFrame(() => {
+            messageList.scrollTop = stayAtTop
+                ? 0
+                : previousScrollTop + (messageList.scrollHeight - previousScrollHeight);
+        });
     }
 
     function updateSelectedConversation(conversation) {
@@ -621,7 +625,6 @@ if (cloudInbox) {
         const serviceWindow = cloudInbox.querySelector('[data-cloud-inbox-window]');
         const windowTitle = cloudInbox.querySelector('[data-cloud-inbox-window-title]');
         const windowDetail = cloudInbox.querySelector('[data-cloud-inbox-window-detail]');
-        const replyForm = cloudInbox.querySelector('[data-cloud-inbox-reply-form]');
         const replyClosed = cloudInbox.querySelector('[data-cloud-inbox-reply-closed]');
         const isOpen = conversation.service_window_open;
 
@@ -699,11 +702,13 @@ if (cloudInbox) {
 
     document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('focus', refreshWhenVisible);
-    if (messageList) {
-        window.requestAnimationFrame(() => {
-            messageList.scrollTop = messageList.scrollHeight;
-        });
-    }
+    replyText?.addEventListener('keydown', (event) => {
+        const hasSendModifier = event.metaKey || event.ctrlKey;
+        if (event.key !== 'Enter' || !hasSendModifier || event.shiftKey || event.altKey || event.isComposing) return;
+
+        event.preventDefault();
+        replyForm?.requestSubmit();
+    });
     schedule(baseDelay);
 }
 
