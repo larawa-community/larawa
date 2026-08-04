@@ -78,7 +78,7 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
             fn ($contact) => (string) ($contact['wa_id'] ?? '') === $customerWaId
         );
         $incomingAt = isset($incoming['timestamp']) && is_numeric($incoming['timestamp'])
-            ? Carbon::createFromTimestampUTC((int) $incoming['timestamp'])
+            ? Carbon::createFromTimestampUTC((int) $incoming['timestamp'])->setTimezone(config('app.timezone'))
             : null;
         $conversation = $this->upsertConversation(
             $session,
@@ -128,7 +128,11 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
             'media_path' => $payload['media_path'] ?? null,
             'mime_type' => $payload['mime_type'] ?? null,
             'payload' => $payload,
-        ])->save();
+        ]);
+        if ($isNew && $incomingAt) {
+            $message->created_at = $incomingAt;
+        }
+        $message->save();
 
         if ($isNew) {
             $webhooks->dispatch($session->workspace, 'message.received', ['session' => $session, 'payload' => $payload]);

@@ -22,7 +22,66 @@ class CloudConversationServiceWindowTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        config(['app.timezone' => 'UTC']);
+        date_default_timezone_set('UTC');
         parent::tearDown();
+    }
+
+    public function test_meta_timestamps_are_stored_in_the_configured_application_timezone(): void
+    {
+        config(['app.timezone' => 'Asia/Tokyo']);
+        date_default_timezone_set('Asia/Tokyo');
+        Carbon::setTestNow('2026-08-05 02:00:00');
+        [, $session] = $this->cloudSession();
+        $sentAt = Carbon::parse('2026-08-05 01:38:00', 'Asia/Tokyo');
+
+        $this->postSignedWebhook($session, $this->inboundPayload('wamid.tokyo', $sentAt->timestamp, 'Tokyo Customer'));
+
+        $conversation = WhatsappConversation::firstOrFail();
+        $message = Message::query()->where('wa_message_id', 'wamid.tokyo')->firstOrFail();
+
+        $this->assertSame('2026-08-05 01:38:00', $conversation->latest_message_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-05 01:38:00', $conversation->latest_inbound_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-06 01:38:00', $conversation->service_window_expires_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-05 01:38:00', $message->created_at->format('Y-m-d H:i:s'));
+    }
+
+    public function test_timezone_normalization_migration_repairs_existing_conversation_activity(): void
+    {
+        config(['app.timezone' => 'Asia/Tokyo']);
+        date_default_timezone_set('Asia/Tokyo');
+        [$workspace, $session] = $this->cloudSession();
+        $providerTimestamp = Carbon::parse('2026-08-05 01:38:00', 'Asia/Tokyo')->timestamp;
+        $conversation = WhatsappConversation::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'customer_wa_id' => '15551234567',
+            'latest_inbound_at' => '2026-08-04 16:38:00',
+            'latest_message_at' => '2026-08-04 16:38:00',
+            'service_window_expires_at' => '2026-08-05 16:38:00',
+        ]);
+        DB::table('messages')->insert([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'transport_session_id' => $session->id,
+            'conversation_id' => $conversation->id,
+            'direction' => 'incoming',
+            'type' => 'text',
+            'status' => 'received',
+            'from' => '15551234567',
+            'body' => 'Hello',
+            'payload' => json_encode(['timestamp' => $providerTimestamp]),
+            'created_at' => '2026-08-05 01:38:00',
+            'updated_at' => '2026-08-05 01:38:00',
+        ]);
+
+        $migration = require database_path('migrations/2026_08_05_000000_normalize_whatsapp_conversation_timestamps.php');
+        $migration->up();
+
+        $conversation->refresh();
+        $this->assertSame('2026-08-05 01:38:00', $conversation->latest_message_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-05 01:38:00', $conversation->latest_inbound_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-08-06 01:38:00', $conversation->service_window_expires_at->format('Y-m-d H:i:s'));
     }
 
     public function test_inbound_webhooks_create_a_conversation_and_never_regress_its_window(): void
