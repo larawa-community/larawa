@@ -51,6 +51,8 @@ class CloudDashboardTest extends TestCase
             ->assertSee('Live updates')
             ->assertSee('Templates')
             ->assertSee('Settings')
+            ->assertSee('data-collapsible-sidebar', false)
+            ->assertSee('data-sidebar-toggle', false)
             ->assertSee('data-cloud-inbox', false)
             ->assertSee('data-cloud-inbox-reply-text', false)
             ->assertSee('⌘ Enter')
@@ -58,6 +60,7 @@ class CloudDashboardTest extends TestCase
             ->assertSee(route('dashboard.sessions.conversations.snapshot', ['session' => $session, 'selected' => $conversation->id]), false)
             ->assertDontSee('Refresh inbox')
             ->assertDontSee('Send an approved template')
+            ->assertDontSee('data-dashboard-header', false)
             ->assertDontSee('data-auto-refresh-ms', false)
             ->assertDontSee('data-session-live-url', false)
             ->assertDontSee('Live WhatsApp Discovery');
@@ -115,11 +118,11 @@ class CloudDashboardTest extends TestCase
             ->assertJsonPath('conversations.1.messages_count', 2)
             ->assertJsonPath('selected.id', $selected->id)
             ->assertJsonPath('selected.service_window_open', true)
-            ->assertJsonPath('messages.0.id', $newestMessage->id)
-            ->assertJsonPath('messages.0.body', 'Newest message')
-            ->assertJsonPath('messages.1.id', $message->id)
-            ->assertJsonPath('messages.1.status', 'read')
-            ->assertJsonPath('messages.1.media_url', route('dashboard.messages.media', $message));
+            ->assertJsonPath('messages.0.id', $message->id)
+            ->assertJsonPath('messages.0.status', 'read')
+            ->assertJsonPath('messages.0.media_url', route('dashboard.messages.media', $message))
+            ->assertJsonPath('messages.1.id', $newestMessage->id)
+            ->assertJsonPath('messages.1.body', 'Newest message');
     }
 
     public function test_conversation_snapshot_is_authenticated_and_rejects_cross_session_or_workspace_access(): void
@@ -171,7 +174,7 @@ class CloudDashboardTest extends TestCase
                 'text' => 'Your order is ready.',
             ])
             ->assertRedirect()
-            ->assertSessionHas('status', 'Reply queued for delivery.');
+            ->assertSessionMissing('status');
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,

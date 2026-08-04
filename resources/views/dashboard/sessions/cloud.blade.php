@@ -6,7 +6,7 @@
     };
 @endphp
 
-<x-layouts.app :workspace="$workspace" :title="$session->name">
+<x-layouts.app :workspace="$workspace" :title="$session->name" :compact-chrome="true">
     <div class="space-y-5" data-cloud-session-workspace>
         <header class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div class="bg-[linear-gradient(125deg,#062d22_0%,#0d6848_68%,#18a56c_100%)] px-5 py-6 text-white sm:px-7">

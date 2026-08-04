@@ -15,6 +15,61 @@ function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 }
 
+const collapsibleSidebar = document.querySelector('[data-collapsible-sidebar]');
+const cloudSidebarStorageKey = 'larawa:cloud-sidebar-expanded';
+
+if (collapsibleSidebar) {
+    const panel = collapsibleSidebar.querySelector('[data-sidebar-panel]');
+    const toggle = collapsibleSidebar.querySelector('[data-sidebar-toggle]');
+    const toggleIcon = collapsibleSidebar.querySelector('[data-sidebar-toggle-icon]');
+    const toggleLabel = collapsibleSidebar.querySelector('[data-sidebar-toggle-label]');
+    const labels = [...collapsibleSidebar.querySelectorAll('[data-sidebar-label]')];
+    const items = [...collapsibleSidebar.querySelectorAll('[data-sidebar-item]')];
+
+    function storedSidebarState() {
+        try {
+            return window.sessionStorage.getItem(cloudSidebarStorageKey) === 'true';
+        } catch {
+            return false;
+        }
+    }
+
+    function setSidebarExpanded(expanded) {
+        collapsibleSidebar.classList.toggle('w-20', !expanded);
+        collapsibleSidebar.classList.toggle('w-64', expanded);
+        panel?.classList.toggle('w-20', !expanded);
+        panel?.classList.toggle('w-64', expanded);
+        labels.forEach((label) => label.classList.toggle('hidden', !expanded));
+        items.forEach((item) => {
+            item.classList.toggle('justify-center', !expanded);
+            item.classList.toggle('px-2', !expanded);
+            item.classList.toggle('justify-start', expanded);
+            item.classList.toggle('px-3', expanded);
+        });
+        toggle?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (toggle) toggle.title = expanded ? 'Collapse navigation' : 'Keep navigation open';
+        if (toggleLabel) toggleLabel.textContent = expanded ? 'Collapse navigation' : 'Keep navigation open';
+        toggleIcon?.classList.toggle('rotate-180', expanded);
+
+        try {
+            window.sessionStorage.setItem(cloudSidebarStorageKey, expanded ? 'true' : 'false');
+        } catch {
+            // The navigation still works when browser storage is unavailable.
+        }
+    }
+
+    setSidebarExpanded(storedSidebarState());
+    toggle?.addEventListener('click', () => {
+        setSidebarExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+    });
+} else {
+    try {
+        window.sessionStorage.removeItem(cloudSidebarStorageKey);
+    } catch {
+        // Ignore unavailable browser storage.
+    }
+}
+
 function showPasskeyStatus(target, message, type = 'error') {
     if (!target) return;
 
@@ -596,9 +651,7 @@ if (cloudInbox) {
         const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.body, message.media_url]));
         if (messageSignature === nextSignature) return;
 
-        const stayAtTop = messageSignature === null || messageList.scrollTop < 96;
-        const previousScrollHeight = messageList.scrollHeight;
-        const previousScrollTop = messageList.scrollTop;
+        const stayAtBottom = messageSignature === null || messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 96;
         messageSignature = nextSignature;
         messageList.replaceChildren();
 
@@ -611,11 +664,11 @@ if (cloudInbox) {
             messages.forEach((message) => messageList.append(renderConversationMessage(message)));
         }
 
-        window.requestAnimationFrame(() => {
-            messageList.scrollTop = stayAtTop
-                ? 0
-                : previousScrollTop + (messageList.scrollHeight - previousScrollHeight);
-        });
+        if (stayAtBottom) {
+            window.requestAnimationFrame(() => {
+                messageList.scrollTop = messageList.scrollHeight;
+            });
+        }
     }
 
     function updateSelectedConversation(conversation) {
@@ -709,6 +762,11 @@ if (cloudInbox) {
         event.preventDefault();
         replyForm?.requestSubmit();
     });
+    if (messageList) {
+        window.requestAnimationFrame(() => {
+            messageList.scrollTop = messageList.scrollHeight;
+        });
+    }
     schedule(baseDelay);
 }
 

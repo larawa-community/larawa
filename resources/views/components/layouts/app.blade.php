@@ -1,4 +1,4 @@
-@props(['title' => 'LaraWA', 'workspace' => null, 'chrome' => true])
+@props(['title' => 'LaraWA', 'workspace' => null, 'chrome' => true, 'compactChrome' => false])
 <!doctype html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -26,10 +26,11 @@
 <body class="min-h-screen">
     @if (auth()->check() && $chrome)
         <div class="flex h-screen overflow-hidden">
-            <aside class="hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-                <div class="flex h-16 items-center gap-3 border-b border-slate-200 px-6">
+            <aside class="hidden h-screen shrink-0 lg:block {{ $compactChrome ? 'relative w-20' : 'w-64' }}" @if($compactChrome) data-collapsible-sidebar @endif>
+                <div class="flex h-screen flex-col border-r border-slate-200 bg-white {{ $compactChrome ? 'group/sidebar absolute inset-y-0 left-0 z-30 w-20 hover:w-64 hover:shadow-xl' : 'w-64' }}" @if($compactChrome) data-sidebar-panel @endif>
+                <div class="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 {{ $compactChrome ? 'px-5 group-hover/sidebar:px-4' : 'px-6' }}">
                     <img src="{{ asset('images/laraWA-icon.png') }}" alt="LaraWA" class="h-9 w-9 shrink-0">
-                    <div class="min-w-0">
+                    <div class="min-w-0 {{ $compactChrome ? 'hidden group-hover/sidebar:block' : '' }}" @if($compactChrome) data-sidebar-label @endif>
                         <div class="truncate text-sm font-semibold text-slate-900">{{ $workspace->name ?? 'Workspace' }}</div>
                         <div class="mt-0.5 truncate text-xs text-slate-500">Powered by LaraWA</div>
                     </div>
@@ -91,24 +92,32 @@
                         $locales = app(\App\Services\Plugins\PluginManager::class)->availableLocales();
                     @endphp
                     @foreach ($items as [$label, $href, $active, $icon])
-                        <a href="{{ $href }}" class="flex items-center gap-3 rounded-md px-3 py-2 font-medium {{ request()->routeIs($active) ? 'bg-[#25d366]/10 text-[#128c42]' : 'text-slate-600 hover:bg-slate-100' }}">
-                            <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true"><path d="{{ $icon }}"/></svg>
-                            {{ $label }}
+                        <a href="{{ $href }}" class="flex items-center gap-3 rounded-md py-2 font-medium {{ $compactChrome ? 'justify-center px-2 group-hover/sidebar:justify-start group-hover/sidebar:px-3' : 'px-3' }} {{ request()->routeIs($active) ? 'bg-[#25d366]/10 text-[#128c42]' : 'text-slate-600 hover:bg-slate-100' }}" @if($compactChrome) data-sidebar-item title="{{ $label }}" @endif>
+                            <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current" aria-hidden="true"><path d="{{ $icon }}"/></svg>
+                            <span class="{{ $compactChrome ? 'hidden group-hover/sidebar:inline' : '' }}" @if($compactChrome) data-sidebar-label @endif>{{ $label }}</span>
                         </a>
                     @endforeach
                 </nav>
+                @if ($compactChrome)
+                    <div class="shrink-0 border-t border-slate-200 p-2">
+                        <button type="button" class="flex w-full items-center justify-center gap-3 rounded-md px-2 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 group-hover/sidebar:justify-start group-hover/sidebar:px-3" data-sidebar-toggle aria-expanded="false" title="Keep navigation open">
+                            <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0 fill-current" aria-hidden="true" data-sidebar-toggle-icon><path d="m9 5 7 7-7 7V5Z"/></svg>
+                            <span class="hidden group-hover/sidebar:inline" data-sidebar-label data-sidebar-toggle-label>Keep navigation open</span>
+                        </button>
+                    </div>
+                @endif
                 <div class="shrink-0 border-t border-slate-200 p-3">
                     <details class="group rounded-lg border border-slate-200 bg-slate-50">
-                        <summary class="flex cursor-pointer list-none items-center gap-3 px-3 py-3">
+                        <summary class="flex cursor-pointer list-none items-center gap-3 py-3 {{ $compactChrome ? 'justify-center px-2 group-hover/sidebar:justify-start group-hover/sidebar:px-3' : 'px-3' }}" @if($compactChrome) data-sidebar-item @endif>
                             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">{{ strtoupper(substr($user?->name ?? 'U', 0, 1)) }}</div>
-                            <div class="min-w-0 flex-1">
+                            <div class="min-w-0 flex-1 {{ $compactChrome ? 'hidden group-hover/sidebar:block' : '' }}" @if($compactChrome) data-sidebar-label @endif>
                                 <div class="truncate text-sm font-semibold text-slate-900">{{ $user?->name }}</div>
                                 <div class="truncate text-xs text-slate-500">{{ $user?->email }}</div>
                                 <div class="mt-1 text-xs font-medium text-[#128c42]">{{ $roleLabel }}</div>
                             </div>
-                            <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current text-slate-400 group-open:rotate-180" aria-hidden="true"><path d="m7 10 5 5 5-5H7Z"/></svg>
+                            <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current text-slate-400 group-open:rotate-180 {{ $compactChrome ? 'hidden group-hover/sidebar:block' : '' }}" aria-hidden="true" @if($compactChrome) data-sidebar-label @endif><path d="m7 10 5 5 5-5H7Z"/></svg>
                         </summary>
-                        <div class="space-y-1 border-t border-slate-200 p-2 text-sm">
+                        <div class="space-y-1 border-t border-slate-200 p-2 text-sm {{ $compactChrome ? 'hidden group-hover/sidebar:block' : '' }}" @if($compactChrome) data-sidebar-label @endif>
                             <a href="{{ route('dashboard.account.password') }}" class="flex items-center gap-2 rounded-md px-3 py-2 font-medium {{ request()->routeIs('dashboard.account.password*') ? 'bg-white text-[#128c42] shadow-sm' : 'text-slate-600 hover:bg-white' }}">
                                 <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v8H4v-8a2 2 0 0 1 2-2h1Zm2 0h6V8a3 3 0 0 0-6 0v2Zm2 4v4h2v-4h-2Z"/></svg>
                                 {{ __('dashboard.account.change_password') }}
@@ -131,9 +140,11 @@
                         </div>
                     </details>
                 </div>
+                </div>
             </aside>
             <main class="min-w-0 flex-1 overflow-y-auto">
-                <header class="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+                @unless ($compactChrome)
+                <header class="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6" data-dashboard-header>
                     <div>
                         <div class="text-sm text-slate-500">{{ $workspace->name ?? 'LaraWA' }}</div>
                         <h1 class="text-lg font-semibold">{{ $title ?? 'Dashboard' }}</h1>
@@ -161,6 +172,21 @@
                         </form>
                     </div>
                 </header>
+                @else
+                <header class="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden" data-mobile-session-header>
+                    <div class="min-w-0">
+                        <div class="truncate text-xs text-slate-500">{{ $workspace->name ?? 'LaraWA' }}</div>
+                        <h1 class="truncate text-sm font-semibold">{{ $title ?? 'Dashboard' }}</h1>
+                    </div>
+                    <div class="ml-3 flex shrink-0 items-center gap-2">
+                        <a href="{{ route('dashboard.workspace.select') }}" class="rounded-md border border-slate-300 px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">{{ __('dashboard.chrome.change_workspace') }}</a>
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button class="rounded-md border border-slate-300 px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">{{ __('dashboard.account.logout') }}</button>
+                        </form>
+                    </div>
+                </header>
+                @endunless
                 <div class="p-4 sm:p-6">
                     @if (session('status'))
                         <div class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('status') }}</div>

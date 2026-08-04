@@ -8,7 +8,7 @@
 @endphp
 
 <section
-    class="h-[calc(100dvh-19rem)] min-h-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+    class="h-[calc(100dvh-15rem)] min-h-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
     data-cloud-inbox
     data-cloud-inbox-snapshot-url="{{ $snapshotUrl }}"
     data-cloud-inbox-selected-id="{{ $selectedConversation?->id }}"

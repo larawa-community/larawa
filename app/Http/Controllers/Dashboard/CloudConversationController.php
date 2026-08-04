@@ -122,7 +122,7 @@ class CloudConversationController extends Controller
             return back()->withInput()->with('error', $result->error);
         }
 
-        return back()->with('status', 'Reply queued for delivery.');
+        return back();
     }
 
     private function render(Request $request, WhatsappSession $session, ?WhatsappConversation $selected): View
@@ -178,7 +178,9 @@ class CloudConversationController extends Controller
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(200)
-            ->get();
+            ->get()
+            ->reverse()
+            ->values();
     }
 
     private function conversationData(WhatsappSession $session, WhatsappConversation $conversation): array
