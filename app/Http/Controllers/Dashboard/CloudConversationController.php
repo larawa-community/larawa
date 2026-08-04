@@ -86,7 +86,7 @@ class CloudConversationController extends Controller
                     'media_url' => $message->media_path
                         ? route('dashboard.messages.media', array_filter([
                             'message' => $message,
-                            'preview' => in_array($message->type, ['image', 'sticker', 'audio'], true) ? 1 : null,
+                            'preview' => in_array($message->type, ['image', 'sticker', 'video', 'audio'], true) ? 1 : null,
                         ]))
                         : null,
                     'download_url' => $message->media_path ? route('dashboard.messages.media', $message) : null,

@@ -260,7 +260,7 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertSame('processed', MetaWebhookReceipt::firstOrFail()->status);
     }
 
-    public function test_meta_webhook_downloads_and_serves_incoming_images_documents_and_voice_messages(): void
+    public function test_meta_webhook_downloads_and_serves_incoming_images_documents_videos_and_voice_messages(): void
     {
         Storage::fake('local');
         config(['filesystems.default' => 'local']);
@@ -277,12 +277,17 @@ class CloudApiWhatsappTest extends TestCase
                 'url' => 'https://media.example.test/customer-document',
                 'mime_type' => 'application/pdf',
             ]),
+            'https://graph.facebook.com/v25.0/media-video' => Http::response([
+                'url' => 'https://media.example.test/customer-video',
+                'mime_type' => 'video/mp4',
+            ]),
             'https://graph.facebook.com/v25.0/media-voice' => Http::response([
                 'url' => 'https://media.example.test/customer-voice',
                 'mime_type' => 'audio/ogg; codecs=opus',
             ]),
             'https://media.example.test/customer-image' => Http::response('stored image bytes', 200, ['Content-Type' => 'image/jpeg']),
             'https://media.example.test/customer-document' => Http::response('stored pdf bytes', 200, ['Content-Type' => 'application/pdf']),
+            'https://media.example.test/customer-video' => Http::response('stored video bytes', 200, ['Content-Type' => 'video/mp4']),
             'https://media.example.test/customer-voice' => Http::response('stored voice bytes', 200, ['Content-Type' => 'audio/ogg; codecs=opus']),
         ]);
 
@@ -311,8 +316,15 @@ class CloudApiWhatsappTest extends TestCase
                             ],
                             [
                                 'from' => '15551234567',
-                                'id' => 'wamid.inbound-voice',
+                                'id' => 'wamid.inbound-video',
                                 'timestamp' => '1785550002',
+                                'type' => 'video',
+                                'video' => ['id' => 'media-video', 'mime_type' => 'video/mp4', 'caption' => 'Product demo'],
+                            ],
+                            [
+                                'from' => '15551234567',
+                                'id' => 'wamid.inbound-voice',
+                                'timestamp' => '1785550003',
                                 'type' => 'audio',
                                 'audio' => ['id' => 'media-voice', 'mime_type' => 'audio/ogg; codecs=opus', 'voice' => true],
                             ],
@@ -330,12 +342,15 @@ class CloudApiWhatsappTest extends TestCase
 
         $image = Message::where('wa_message_id', 'wamid.inbound-image')->firstOrFail();
         $document = Message::where('wa_message_id', 'wamid.inbound-document')->firstOrFail();
+        $video = Message::where('wa_message_id', 'wamid.inbound-video')->firstOrFail();
         $voice = Message::where('wa_message_id', 'wamid.inbound-voice')->firstOrFail();
         Storage::disk('local')->assertExists($image->media_path);
         Storage::disk('local')->assertExists($document->media_path);
+        Storage::disk('local')->assertExists($video->media_path);
         Storage::disk('local')->assertExists($voice->media_path);
         $this->assertSame('image/jpeg', $image->mime_type);
         $this->assertSame('invoice.pdf', $document->payload['filename']);
+        $this->assertSame('video/mp4', $video->mime_type);
         $this->assertSame('audio/ogg; codecs=opus', $voice->mime_type);
         $this->assertTrue($voice->payload['meta_webhook']['audio']['voice']);
 
@@ -347,12 +362,17 @@ class CloudApiWhatsappTest extends TestCase
         $messages = collect($snapshot->json('messages'))->keyBy('type');
         $this->assertStringContainsString('preview=1', $messages['image']['media_url']);
         $this->assertSame('invoice.pdf', $messages['document']['filename']);
+        $this->assertStringContainsString('preview=1', $messages['video']['media_url']);
         $this->assertTrue($messages['audio']['is_voice']);
         $this->assertStringContainsString('preview=1', $messages['audio']['media_url']);
 
         $this->get(route('dashboard.sessions.conversations.show', [$cloud, $conversation]))
             ->assertOk()
             ->assertSee('data-cloud-inbox-media-image', false)
+            ->assertSee('data-cloud-inbox-image-viewer', false)
+            ->assertSee('data-cloud-inbox-image-zoom-in', false)
+            ->assertSee('data-cloud-inbox-image-zoom-out', false)
+            ->assertSee('data-cloud-inbox-media-video', false)
             ->assertSee('data-cloud-inbox-media-audio', false)
             ->assertSee('Voice message');
 
@@ -362,6 +382,9 @@ class CloudApiWhatsappTest extends TestCase
         $this->get(route('dashboard.messages.media', ['message' => $voice, 'preview' => 1]))
             ->assertOk()
             ->assertHeader('content-type', 'audio/ogg; codecs=opus');
+        $this->get(route('dashboard.messages.media', ['message' => $video, 'preview' => 1]))
+            ->assertOk()
+            ->assertHeader('content-type', 'video/mp4');
     }
 
     public function test_meta_webhook_rejects_bad_signature_and_acknowledges_unknown_phone_number(): void

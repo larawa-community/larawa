@@ -33,6 +33,7 @@ class MessageMediaController extends Controller
         abort_unless(! $message->transport_session_id || ($message->transportSession && $workspace->allowsSessionType($message->transportSession->type)), 404);
 
         $isInlineMedia = str_starts_with((string) $message->mime_type, 'image/')
+            || str_starts_with((string) $message->mime_type, 'video/')
             || str_starts_with((string) $message->mime_type, 'audio/');
         $response = $request->boolean('preview') && $isInlineMedia
             ? $this->preview($message)

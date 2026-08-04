@@ -88,10 +88,22 @@
                         <div class="flex {{ $outgoing ? 'justify-end' : 'justify-start' }}">
                             <article class="max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] {{ $outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900' }}">
                                 @if ($message->media_path && in_array($message->type, ['image', 'sticker'], true))
-                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100" title="Download {{ data_get($message->payload, 'filename', 'image') }}" data-cloud-inbox-image-link>
+                                    <button type="button" class="group relative -mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100 text-left" aria-label="View {{ data_get($message->payload, 'filename', 'image') }}" data-cloud-inbox-image-open data-cloud-inbox-image-frame data-media-url="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" data-media-alt="{{ $message->body ?: 'Shared image' }}" data-media-name="{{ data_get($message->payload, 'filename', 'Image') }}">
                                         <img src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" alt="{{ $message->body ?: 'Shared image' }}" class="max-h-80 w-full object-cover" loading="lazy" data-cloud-inbox-media-image>
-                                    </a>
+                                        <span class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end bg-gradient-to-t from-black/45 to-transparent p-3 pt-10 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"><span class="rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-semibold">View image</span></span>
+                                    </button>
                                     @if ($message->body)<div class="whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body }}</div>@endif
+                                @elseif ($message->media_path && $message->type === 'video')
+                                    <div class="min-w-[15rem] overflow-hidden rounded-xl border border-black/5 bg-slate-950 sm:min-w-80">
+                                        <video controls preload="metadata" playsinline class="max-h-96 w-full bg-black" data-cloud-inbox-media-video>
+                                            <source src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" type="{{ $message->mime_type }}">
+                                        </video>
+                                        <div class="flex items-center justify-between gap-3 bg-white/95 px-3 py-2">
+                                            <span class="min-w-0 truncate text-xs font-semibold text-slate-700">{{ data_get($message->payload, 'filename', 'Video') }}</span>
+                                            <a href="{{ route('dashboard.messages.media', $message) }}" class="shrink-0 text-[10px] font-semibold uppercase text-[#128c42]">Download</a>
+                                        </div>
+                                    </div>
+                                    @if ($message->body)<div class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body }}</div>@endif
                                 @elseif ($message->media_path && $message->type === 'audio')
                                     <div class="min-w-[15rem] rounded-xl border border-black/5 bg-white/70 p-3 sm:min-w-80">
                                         <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
@@ -178,4 +190,31 @@
             @endif
         </div>
     </div>
+
+    <dialog class="m-auto h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none overflow-hidden rounded-2xl border border-white/10 bg-slate-950 p-0 text-white shadow-2xl backdrop:bg-slate-950/90 sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)]" data-cloud-inbox-image-viewer aria-labelledby="cloud-inbox-image-viewer-title">
+        <div class="flex h-full min-h-0 flex-col">
+            <header class="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-950 px-3 py-2.5 sm:px-4">
+                <div class="min-w-0">
+                    <h3 id="cloud-inbox-image-viewer-title" class="truncate text-sm font-semibold" data-cloud-inbox-image-viewer-name>Image</h3>
+                    <p class="mt-0.5 text-[10px] text-slate-400">Scroll or use the controls to zoom · drag to move</p>
+                </div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom out" title="Zoom out" data-cloud-inbox-image-zoom-out>
+                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current" stroke-width="2" aria-hidden="true"><path d="M6 12h12"/></svg>
+                    </button>
+                    <button type="button" class="h-9 min-w-14 rounded-lg bg-white/10 px-2 text-xs font-semibold text-white transition hover:bg-white/20" title="Reset zoom" data-cloud-inbox-image-zoom-label>100%</button>
+                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom in" title="Zoom in" data-cloud-inbox-image-zoom-in>
+                        <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current" stroke-width="2" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg>
+                    </button>
+                    <span class="mx-1 h-5 w-px bg-white/15"></span>
+                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20" aria-label="Close image viewer" title="Close" data-cloud-inbox-image-viewer-close>
+                        <svg viewBox="0 0 24 24" class="h-5 w-5 fill-none stroke-current" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                    </button>
+                </div>
+            </header>
+            <div class="relative min-h-0 flex-1 touch-none select-none overflow-hidden bg-[radial-gradient(circle_at_center,#1e293b_0%,#020617_72%)]" data-cloud-inbox-image-stage>
+                <img alt="" class="pointer-events-none absolute left-1/2 top-1/2 max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 object-contain will-change-transform sm:max-h-[calc(100%-3rem)] sm:max-w-[calc(100%-3rem)]" data-cloud-inbox-image-viewer-image>
+            </div>
+        </div>
+    </dialog>
 </section>

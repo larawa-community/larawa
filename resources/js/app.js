@@ -536,12 +536,26 @@ if (cloudInbox) {
     const fileError = cloudInbox.querySelector('[data-cloud-inbox-file-error]');
     const fileRemove = cloudInbox.querySelector('[data-cloud-inbox-file-remove]');
     const mediaSubmit = cloudInbox.querySelector('[data-cloud-inbox-media-submit]');
+    const imageViewer = cloudInbox.querySelector('[data-cloud-inbox-image-viewer]');
+    const imageViewerImage = cloudInbox.querySelector('[data-cloud-inbox-image-viewer-image]');
+    const imageViewerName = cloudInbox.querySelector('[data-cloud-inbox-image-viewer-name]');
+    const imageStage = cloudInbox.querySelector('[data-cloud-inbox-image-stage]');
+    const imageZoomOut = cloudInbox.querySelector('[data-cloud-inbox-image-zoom-out]');
+    const imageZoomIn = cloudInbox.querySelector('[data-cloud-inbox-image-zoom-in]');
+    const imageZoomLabel = cloudInbox.querySelector('[data-cloud-inbox-image-zoom-label]');
+    const imageViewerClose = cloudInbox.querySelector('[data-cloud-inbox-image-viewer-close]');
     let timer = null;
     let inFlight = false;
     let failures = 0;
     let conversationSignature = null;
     let messageSignature = null;
     let filePreviewUrl = null;
+    let imageZoom = 1;
+    let imagePanX = 0;
+    let imagePanY = 0;
+    let imageDragging = false;
+    let imagePointerX = 0;
+    let imagePointerY = 0;
 
     function setLiveStatus(state) {
         const reconnecting = state === 'reconnecting';
@@ -630,20 +644,55 @@ if (cloudInbox) {
         article.className = `max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] ${outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900'}`;
         const hasImage = ['image', 'sticker'].includes(message.type) && message.media_url;
         if (hasImage) {
-            const media = document.createElement('a');
-            media.href = message.download_url || message.media_url;
-            media.className = '-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100';
-            media.title = `Download ${message.filename || 'image'}`;
+            const media = document.createElement('button');
+            media.type = 'button';
+            media.className = 'group relative -mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100 text-left';
+            media.setAttribute('aria-label', `View ${message.filename || 'image'}`);
+            media.dataset.cloudInboxImageOpen = '';
+            media.dataset.cloudInboxImageFrame = '';
+            media.dataset.mediaUrl = message.media_url;
+            media.dataset.mediaAlt = message.body || 'Shared image';
+            media.dataset.mediaName = message.filename || 'Image';
             const image = document.createElement('img');
             image.src = message.media_url;
             image.alt = message.body || 'Shared image';
             image.className = 'max-h-80 w-full object-cover';
             image.loading = 'lazy';
             image.dataset.cloudInboxMediaImage = '';
-            media.dataset.cloudInboxImageLink = '';
             image.addEventListener('error', () => showUnavailableImage(image));
-            media.append(image);
+            const affordance = document.createElement('span');
+            affordance.className = 'pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end bg-gradient-to-t from-black/45 to-transparent p-3 pt-10 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100';
+            affordance.innerHTML = '<span class="rounded-full bg-black/40 px-2.5 py-1 text-[10px] font-semibold">View image</span>';
+            media.append(image, affordance);
             article.append(media);
+        } else if (message.type === 'video' && message.media_url) {
+            const videoCard = document.createElement('div');
+            videoCard.className = 'min-w-[15rem] overflow-hidden rounded-xl border border-black/5 bg-slate-950 sm:min-w-80';
+
+            const video = document.createElement('video');
+            video.controls = true;
+            video.preload = 'metadata';
+            video.playsInline = true;
+            video.className = 'max-h-96 w-full bg-black';
+            video.dataset.cloudInboxMediaVideo = '';
+            video.addEventListener('error', () => showUnavailableVideo(video));
+            const source = document.createElement('source');
+            source.src = message.media_url;
+            source.type = message.mime_type || 'video/mp4';
+            video.append(source);
+
+            const footer = document.createElement('div');
+            footer.className = 'flex items-center justify-between gap-3 bg-white/95 px-3 py-2';
+            const name = document.createElement('span');
+            name.className = 'min-w-0 truncate text-xs font-semibold text-slate-700';
+            name.textContent = message.filename || 'Video';
+            const download = document.createElement('a');
+            download.href = message.download_url || message.media_url;
+            download.className = 'shrink-0 text-[10px] font-semibold uppercase text-[#128c42]';
+            download.textContent = 'Download';
+            footer.append(name, download);
+            videoCard.append(video, footer);
+            article.append(videoCard);
         } else if (message.type === 'audio' && message.media_url) {
             const audioCard = document.createElement('div');
             audioCard.className = 'min-w-[15rem] rounded-xl border border-black/5 bg-white/70 p-3 sm:min-w-80';
@@ -718,9 +767,9 @@ if (cloudInbox) {
     }
 
     function showUnavailableImage(image) {
-        const link = image.closest('[data-cloud-inbox-image-link]');
-        if (!link || link.dataset.mediaUnavailable === 'true') return;
-        link.dataset.mediaUnavailable = 'true';
+        const frame = image.closest('[data-cloud-inbox-image-frame]');
+        if (!frame || frame.dataset.mediaUnavailable === 'true') return;
+        frame.dataset.mediaUnavailable = 'true';
 
         const unavailable = document.createElement('div');
         unavailable.className = 'flex min-h-28 items-center justify-center p-5 text-center';
@@ -733,9 +782,9 @@ if (cloudInbox) {
         detail.textContent = 'The media could not be loaded.';
         content.append(title, detail);
         unavailable.append(content);
-        link.removeAttribute('href');
-        link.removeAttribute('title');
-        link.replaceChildren(unavailable);
+        frame.disabled = true;
+        frame.removeAttribute('data-cloud-inbox-image-open');
+        frame.replaceChildren(unavailable);
     }
 
     function showUnavailableAudio(audio) {
@@ -750,6 +799,68 @@ if (cloudInbox) {
         detail.className = 'mt-1 text-xs text-slate-500';
         detail.textContent = 'The voice message could not be loaded.';
         card.replaceChildren(title, detail);
+    }
+
+    function showUnavailableVideo(video) {
+        const card = video.parentElement;
+        if (!card || card.dataset.mediaUnavailable === 'true') return;
+        card.dataset.mediaUnavailable = 'true';
+
+        const unavailable = document.createElement('div');
+        unavailable.className = 'flex min-h-40 items-center justify-center p-5 text-center';
+        const content = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'text-sm font-semibold text-white';
+        title.textContent = 'Video unavailable';
+        const detail = document.createElement('div');
+        detail.className = 'mt-1 text-xs text-slate-400';
+        detail.textContent = 'The video could not be loaded.';
+        content.append(title, detail);
+        unavailable.append(content);
+        card.replaceChildren(unavailable);
+    }
+
+    function renderImageTransform() {
+        if (!imageViewerImage) return;
+        imageViewerImage.style.transform = `translate(-50%, -50%) translate(${imagePanX}px, ${imagePanY}px) scale(${imageZoom})`;
+        if (imageZoomLabel) imageZoomLabel.textContent = `${Math.round(imageZoom * 100)}%`;
+        if (imageZoomOut) imageZoomOut.disabled = imageZoom <= 0.5;
+        if (imageZoomIn) imageZoomIn.disabled = imageZoom >= 4;
+        imageStage?.classList.toggle('cursor-grab', imageZoom > 1 && !imageDragging);
+        imageStage?.classList.toggle('cursor-grabbing', imageDragging);
+    }
+
+    function setImageZoom(nextZoom) {
+        imageZoom = Math.min(4, Math.max(0.5, Math.round(nextZoom * 4) / 4));
+        if (imageZoom <= 1) {
+            imagePanX = 0;
+            imagePanY = 0;
+        }
+        renderImageTransform();
+    }
+
+    function resetImageViewer() {
+        imageZoom = 1;
+        imagePanX = 0;
+        imagePanY = 0;
+        imageDragging = false;
+        renderImageTransform();
+    }
+
+    function openImageViewer(trigger) {
+        if (!imageViewer || !imageViewerImage) return;
+        imageViewerImage.src = trigger.dataset.mediaUrl || '';
+        imageViewerImage.alt = trigger.dataset.mediaAlt || 'Shared image';
+        if (imageViewerName) imageViewerName.textContent = trigger.dataset.mediaName || 'Image';
+        resetImageViewer();
+        imageViewer.showModal();
+    }
+
+    function closeImageViewer() {
+        if (!imageViewer?.open) return;
+        imageViewer.close();
+        imageViewerImage?.removeAttribute('src');
+        resetImageViewer();
     }
 
     function updateConversationMessages(messages) {
@@ -929,12 +1040,72 @@ if (cloudInbox) {
             mediaSubmit.textContent = 'Sending…';
         }
     });
+    cloudInbox.addEventListener('click', (event) => {
+        const imageTrigger = event.target.closest('[data-cloud-inbox-image-open]');
+        if (imageTrigger) openImageViewer(imageTrigger);
+    });
+    imageViewerClose?.addEventListener('click', closeImageViewer);
+    imageZoomOut?.addEventListener('click', () => setImageZoom(imageZoom - 0.25));
+    imageZoomIn?.addEventListener('click', () => setImageZoom(imageZoom + 0.25));
+    imageZoomLabel?.addEventListener('click', resetImageViewer);
+    imageViewer?.addEventListener('click', (event) => {
+        if (event.target === imageViewer) closeImageViewer();
+    });
+    imageViewer?.addEventListener('close', () => {
+        imageViewerImage?.removeAttribute('src');
+        resetImageViewer();
+    });
+    imageViewer?.addEventListener('keydown', (event) => {
+        if (event.key === '+' || event.key === '=') {
+            event.preventDefault();
+            setImageZoom(imageZoom + 0.25);
+        } else if (event.key === '-') {
+            event.preventDefault();
+            setImageZoom(imageZoom - 0.25);
+        } else if (event.key === '0') {
+            event.preventDefault();
+            resetImageViewer();
+        }
+    });
+    imageStage?.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        setImageZoom(imageZoom + (event.deltaY < 0 ? 0.25 : -0.25));
+    }, { passive: false });
+    imageStage?.addEventListener('pointerdown', (event) => {
+        if (imageZoom <= 1) return;
+        imageDragging = true;
+        imagePointerX = event.clientX;
+        imagePointerY = event.clientY;
+        imageStage.setPointerCapture(event.pointerId);
+        renderImageTransform();
+    });
+    imageStage?.addEventListener('pointermove', (event) => {
+        if (!imageDragging) return;
+        imagePanX += event.clientX - imagePointerX;
+        imagePanY += event.clientY - imagePointerY;
+        imagePointerX = event.clientX;
+        imagePointerY = event.clientY;
+        renderImageTransform();
+    });
+    imageStage?.addEventListener('pointerup', (event) => {
+        if (!imageDragging) return;
+        imageDragging = false;
+        imageStage.releasePointerCapture(event.pointerId);
+        renderImageTransform();
+    });
+    imageStage?.addEventListener('pointercancel', () => {
+        imageDragging = false;
+        renderImageTransform();
+    });
     cloudInbox.querySelectorAll('[data-cloud-inbox-media-image]').forEach((image) => {
         if (image.complete && image.naturalWidth === 0) showUnavailableImage(image);
         else image.addEventListener('error', () => showUnavailableImage(image));
     });
     cloudInbox.querySelectorAll('[data-cloud-inbox-media-audio]').forEach((audio) => {
         audio.addEventListener('error', () => showUnavailableAudio(audio));
+    });
+    cloudInbox.querySelectorAll('[data-cloud-inbox-media-video]').forEach((video) => {
+        video.addEventListener('error', () => showUnavailableVideo(video));
     });
     if (messageList) {
         window.requestAnimationFrame(() => {
