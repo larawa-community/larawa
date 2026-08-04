@@ -647,6 +647,11 @@ class CloudDashboardTest extends TestCase
                 ->assertSee('Authentication')
                 ->assertSee('One-tap autofill')
                 ->assertSee('Zero-tap autofill')
+                ->assertSee('data-meta-action-form', false)
+                ->assertSee('data-meta-action-loading', false)
+                ->assertSee('data-meta-action-label', false)
+                ->assertDontSee('name="authentication[text]"', false)
+                ->assertDontSee('name="authentication[autofill_text]"', false)
                 ->assertSee('data-template-preview-body', false)
                 ->assertSee('nothing is uploaded');
         }
@@ -656,10 +661,12 @@ class CloudDashboardTest extends TestCase
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
         Http::fake([
-            'https://graph.facebook.com/v25.0/waba-dashboard/message_templates' => Http::response([
-                'id' => '983328304742817',
-                'status' => 'APPROVED',
-                'category' => 'AUTHENTICATION',
+            'https://graph.facebook.com/v25.0/waba-dashboard/upsert_message_templates' => Http::response([
+                'data' => [[
+                    'id' => '983328304742817',
+                    'status' => 'APPROVED',
+                    'language' => 'ja',
+                ]],
             ]),
         ]);
 
@@ -673,18 +680,21 @@ class CloudDashboardTest extends TestCase
                     'add_security_recommendation' => '1',
                     'code_expiration_minutes' => '5',
                     'otp_type' => 'COPY_CODE',
-                    'text' => 'Copy Code',
                     'zero_tap_terms_accepted' => '0',
                 ],
             ])
             ->assertRedirect(route('dashboard.sessions.templates.show', [$session, '983328304742817']))
             ->assertSessionHas('status', 'Template submitted to Meta for review.');
 
-        Http::assertSent(fn ($request) => $request['category'] === 'AUTHENTICATION'
-            && $request['language'] === 'ja'
+        Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/waba-dashboard/upsert_message_templates'
+            && $request['category'] === 'AUTHENTICATION'
+            && $request['languages'] === ['ja']
             && $request['components'][0] === ['type' => 'BODY', 'add_security_recommendation' => true]
             && $request['components'][1] === ['type' => 'FOOTER', 'code_expiration_minutes' => 5]
-            && data_get($request->data(), 'components.2.buttons.0.otp_type') === 'COPY_CODE');
+            && data_get($request->data(), 'components.2.buttons.0') === [
+                'type' => 'OTP',
+                'otp_type' => 'COPY_CODE',
+            ]);
     }
 
     /** @return array{Workspace, WhatsappSession, User} */

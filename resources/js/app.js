@@ -401,8 +401,8 @@ document.querySelectorAll('[data-template-editor]').forEach((editor) => {
             const previewButton = document.createElement('div');
             previewButton.className = 'mt-3 border-t border-slate-100 pt-2 text-center text-sm font-semibold text-sky-600';
             previewButton.textContent = otpType === 'COPY_CODE'
-                ? (value('authentication[text]') || 'Copy Code')
-                : (value('authentication[autofill_text]') || 'Autofill');
+                ? 'Copy code (localized by Meta)'
+                : 'Autofill (localized by Meta)';
             buttons.append(previewButton);
             return;
         }

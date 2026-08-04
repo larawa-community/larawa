@@ -5,6 +5,7 @@
     $editorFooter = collect($editingComponents)->first(fn ($component) => strtoupper($component['type'] ?? '') === 'FOOTER');
     $editorButtons = collect($editingComponents)->first(fn ($component) => strtoupper($component['type'] ?? '') === 'BUTTONS')['buttons'] ?? [];
     $authenticationButton = collect($editorButtons)->first(fn ($button) => strtoupper($button['type'] ?? '') === 'OTP') ?: [];
+    $authenticationApp = data_get($authenticationButton, 'supported_apps.0', $authenticationButton);
     $positionalExamples = data_get($editorBody, 'example.body_text.0', []);
     $namedExamples = collect(data_get($editorBody, 'example.body_text_named_params', []))
         ->map(fn ($example) => ($example['param_name'] ?? '').'='.($example['example'] ?? ''))
@@ -129,7 +130,7 @@
             </div>
 
             @if ($templateDetail->status === 'APPROVED' && $templateDetail->is_active)
-                <form method="POST" action="{{ route('dashboard.sessions.templates.send', [$session, $templateDetail->meta_template_id]) }}" class="border-t border-slate-200 bg-slate-50/70 px-5 py-5 sm:px-6">
+                <form method="POST" action="{{ route('dashboard.sessions.templates.send', [$session, $templateDetail->meta_template_id]) }}" class="border-t border-slate-200 bg-slate-50/70 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Sending the template through Meta…">
                     @csrf
                     <div class="flex flex-wrap items-end gap-3">
                         <label class="min-w-[220px] flex-1 text-xs font-semibold text-slate-600">Customer number<input name="to" required placeholder="819012345678" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900"></label>
@@ -148,7 +149,7 @@
             <header class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
                 <div><a href="{{ route('dashboard.sessions.templates.index', $session) }}" class="text-xs font-semibold text-[#128c42]">← Template list</a><h3 class="mt-2 font-semibold text-slate-900">{{ $editorMode === 'edit' ? 'Edit template' : 'Create template' }}</h3><p class="mt-1 text-sm text-slate-500">Build the message and review the live preview before submitting it to Meta.</p></div>
             </header>
-            <form data-template-editor-form method="POST" action="{{ $editorMode === 'edit' ? route('dashboard.sessions.templates.update', [$session, $editingTemplate->meta_template_id]) : route('dashboard.sessions.templates.store', $session) }}" enctype="multipart/form-data" class="space-y-6 px-5 py-5 sm:px-6">
+            <form data-template-editor-form method="POST" action="{{ $editorMode === 'edit' ? route('dashboard.sessions.templates.update', [$session, $editingTemplate->meta_template_id]) : route('dashboard.sessions.templates.store', $session) }}" enctype="multipart/form-data" class="space-y-6 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="{{ $editorMode === 'edit' ? 'Submitting template changes to Meta…' : 'Submitting the template to Meta…' }}">
                 @csrf
                 @if ($editorMode === 'edit') @method('PATCH') @endif
                 <div class="grid gap-4 sm:grid-cols-2">
@@ -171,10 +172,9 @@
                         </label>
                         <label class="text-xs font-semibold text-slate-600">Code expires after <span class="font-normal text-slate-400">(optional)</span><div class="mt-1 flex items-center gap-2"><input name="authentication[code_expiration_minutes]" type="number" min="1" max="90" value="{{ old('authentication.code_expiration_minutes', $editorFooter['code_expiration_minutes'] ?? '') }}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"><span class="text-xs font-normal text-slate-500">minutes</span></div></label>
                         <label class="text-xs font-semibold text-slate-600">OTP action<select name="authentication[otp_type]" data-authentication-otp-type class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal">@foreach (['COPY_CODE' => 'Copy code', 'ONE_TAP' => 'One-tap autofill', 'ZERO_TAP' => 'Zero-tap autofill'] as $value => $label)<option value="{{ $value }}" @selected(old('authentication.otp_type', $authenticationButton['otp_type'] ?? 'COPY_CODE') === $value)>{{ $label }}</option>@endforeach</select></label>
-                        <label class="text-xs font-semibold text-slate-600">Copy button label<input name="authentication[text]" value="{{ old('authentication.text', $authenticationButton['text'] ?? 'Copy Code') }}" maxlength="25" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
-                        <label data-authentication-app-field class="hidden text-xs font-semibold text-slate-600">Autofill button label<input name="authentication[autofill_text]" value="{{ old('authentication.autofill_text', $authenticationButton['autofill_text'] ?? 'Autofill') }}" maxlength="25" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
-                        <label data-authentication-app-field class="hidden text-xs font-semibold text-slate-600">Android package name<input name="authentication[package_name]" value="{{ old('authentication.package_name', $authenticationButton['package_name'] ?? '') }}" placeholder="com.example.app" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
-                        <label data-authentication-app-field class="hidden text-xs font-semibold text-slate-600">App signature hash<input name="authentication[signature_hash]" value="{{ old('authentication.signature_hash', $authenticationButton['signature_hash'] ?? '') }}" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
+                        <div class="rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-xs leading-5 text-slate-600">Meta automatically localizes the verification text and OTP button label for the selected language.</div>
+                        <label data-authentication-app-field class="hidden text-xs font-semibold text-slate-600">Android package name<input name="authentication[package_name]" value="{{ old('authentication.package_name', $authenticationApp['package_name'] ?? '') }}" placeholder="com.example.app" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
+                        <label data-authentication-app-field class="hidden text-xs font-semibold text-slate-600">App signature hash<input name="authentication[signature_hash]" value="{{ old('authentication.signature_hash', $authenticationApp['signature_hash'] ?? '') }}" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal"></label>
                         <label data-authentication-zero-tap class="hidden items-start gap-2 text-xs font-semibold text-slate-700 sm:col-span-2">
                             <input type="hidden" name="authentication[zero_tap_terms_accepted]" value="0">
                             <input type="checkbox" name="authentication[zero_tap_terms_accepted]" value="1" @checked(old('authentication.zero_tap_terms_accepted', (bool) ($authenticationButton['zero_tap_terms_accepted'] ?? false))) class="mt-0.5 rounded border-slate-300 text-[#128c42] focus:ring-[#25d366]">

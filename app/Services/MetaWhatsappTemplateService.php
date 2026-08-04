@@ -71,8 +71,6 @@ class MetaWhatsappTemplateService
             'authentication.add_security_recommendation' => ['nullable', 'boolean'],
             'authentication.code_expiration_minutes' => ['nullable', 'integer', 'min:1', 'max:90'],
             'authentication.otp_type' => ['required_if:category,AUTHENTICATION', Rule::in(['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'])],
-            'authentication.text' => ['nullable', 'string', 'max:25'],
-            'authentication.autofill_text' => ['nullable', 'string', 'max:25'],
             'authentication.package_name' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
             'authentication.signature_hash' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
             'authentication.zero_tap_terms_accepted' => ['nullable', 'boolean'],
@@ -132,6 +130,25 @@ class MetaWhatsappTemplateService
     {
         $config = $this->configuration($session);
         $components = $this->buildComponents($config, $payload);
+
+        if ($payload['category'] === 'AUTHENTICATION') {
+            $result = $this->upsertAuthenticationTemplate(
+                $config,
+                $payload['name'],
+                $payload['language'],
+                $components,
+            );
+
+            return $this->remoteTemplate(array_merge($result, [
+                'id' => (string) $result['id'],
+                'name' => $payload['name'],
+                'language' => $payload['language'],
+                'category' => 'AUTHENTICATION',
+                'components' => $components,
+                'status' => $result['status'] ?? 'PENDING',
+            ]));
+        }
+
         $request = array_filter([
             'name' => $payload['name'],
             'language' => $payload['language'],
@@ -182,7 +199,9 @@ class MetaWhatsappTemplateService
             'language' => $template->language,
         ], $changes);
 
-        $result = $this->request(fn () => $this->http($config)->post($this->url($metaTemplateId), $request)->throw()->json());
+        $result = ($payload['category'] ?? $template->category) === 'AUTHENTICATION'
+            ? $this->upsertAuthenticationTemplate($config, $template->name, $template->language, $components ?? $template->components)
+            : $this->request(fn () => $this->http($config)->post($this->url($metaTemplateId), $request)->throw()->json());
 
         return $this->remoteTemplate(array_merge($template->toArray(), array_filter([
             'id' => $metaTemplateId,
@@ -304,12 +323,12 @@ class MetaWhatsappTemplateService
         $button = [
             'type' => 'OTP',
             'otp_type' => $otpType,
-            'text' => $authentication['text'] ?? 'Copy Code',
         ];
         if (in_array($otpType, ['ONE_TAP', 'ZERO_TAP'], true)) {
-            $button['autofill_text'] = $authentication['autofill_text'] ?? 'Autofill';
-            $button['package_name'] = $authentication['package_name'];
-            $button['signature_hash'] = $authentication['signature_hash'];
+            $button['supported_apps'] = [[
+                'package_name' => $authentication['package_name'],
+                'signature_hash' => $authentication['signature_hash'],
+            ]];
         }
         if ($otpType === 'ZERO_TAP') {
             if (! (bool) ($authentication['zero_tap_terms_accepted'] ?? false)) {
@@ -323,6 +342,34 @@ class MetaWhatsappTemplateService
         $components[] = ['type' => 'BUTTONS', 'buttons' => [$button]];
 
         return $components;
+    }
+
+    private function upsertAuthenticationTemplate(
+        WhatsappCloudConfig $config,
+        string $name,
+        string $language,
+        array $components,
+    ): array {
+        $result = $this->request(fn () => $this->http($config)
+            ->post($this->url($config->waba_id.'/upsert_message_templates'), [
+                'name' => $name,
+                'languages' => [$language],
+                'category' => 'AUTHENTICATION',
+                'components' => $components,
+            ])
+            ->throw()
+            ->json());
+
+        $languageResult = collect($result['data'] ?? [])
+            ->first(fn ($template) => ($template['language'] ?? null) === $language)
+            ?? collect($result['data'] ?? [])->first()
+            ?? $result;
+
+        if (! is_array($languageResult) || ! filled($languageResult['id'] ?? null)) {
+            throw ValidationException::withMessages(['meta' => 'Meta accepted the authentication template without returning a template ID.']);
+        }
+
+        return $languageResult;
     }
 
     private function uploadSampleMedia(WhatsappCloudConfig $config, array $media): string

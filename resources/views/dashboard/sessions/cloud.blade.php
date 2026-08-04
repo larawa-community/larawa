@@ -51,5 +51,16 @@
         @else
             @include('dashboard.sessions.partials.cloud-settings')
         @endif
+
+        <div class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm" data-meta-action-loading role="status" aria-live="polite" aria-hidden="true">
+            <div class="w-full max-w-sm rounded-2xl border border-white/70 bg-white p-6 text-center shadow-2xl">
+                <svg class="mx-auto h-10 w-10 animate-spin text-[#128c42]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle class="opacity-20" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"></circle>
+                    <path class="opacity-90" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+                </svg>
+                <h2 class="mt-4 text-base font-semibold text-slate-900" data-meta-action-loading-label>Contacting Meta…</h2>
+                <p class="mt-1 text-sm leading-5 text-slate-500">Please keep this page open. This request can take a moment.</p>
+            </div>
+        </div>
     </div>
 </x-layouts.app>

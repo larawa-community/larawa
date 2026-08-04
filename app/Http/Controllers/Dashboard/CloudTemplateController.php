@@ -258,8 +258,6 @@ class CloudTemplateController extends Controller
             'authentication.add_security_recommendation' => ['nullable', 'boolean'],
             'authentication.code_expiration_minutes' => ['nullable', 'integer', 'min:1', 'max:90'],
             'authentication.otp_type' => ['required_if:category,AUTHENTICATION', 'nullable', 'in:COPY_CODE,ONE_TAP,ZERO_TAP'],
-            'authentication.text' => ['nullable', 'string', 'max:25'],
-            'authentication.autofill_text' => ['nullable', 'string', 'max:25'],
             'authentication.package_name' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
             'authentication.signature_hash' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
             'authentication.zero_tap_terms_accepted' => ['nullable', 'boolean'],

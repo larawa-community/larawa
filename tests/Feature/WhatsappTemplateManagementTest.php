@@ -145,10 +145,12 @@ class WhatsappTemplateManagementTest extends TestCase
         [$workspace, $session] = $this->cloudSession();
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
         Http::fake([
-            'https://graph.facebook.com/v25.0/waba-1/message_templates' => Http::response([
-                'id' => '983328304742815',
-                'status' => 'APPROVED',
-                'category' => 'AUTHENTICATION',
+            'https://graph.facebook.com/v25.0/waba-1/upsert_message_templates' => Http::response([
+                'data' => [[
+                    'id' => '983328304742815',
+                    'status' => 'APPROVED',
+                    'language' => 'ja',
+                ]],
             ]),
         ]);
 
@@ -160,8 +162,6 @@ class WhatsappTemplateManagementTest extends TestCase
                 'add_security_recommendation' => true,
                 'code_expiration_minutes' => 10,
                 'otp_type' => 'ONE_TAP',
-                'text' => 'Copy Code',
-                'autofill_text' => 'Autofill',
                 'package_name' => 'com.example.app',
                 'signature_hash' => 'K8a/AINcGX7',
             ],
@@ -169,8 +169,8 @@ class WhatsappTemplateManagementTest extends TestCase
             ->assertJsonPath('data.category', 'AUTHENTICATION')
             ->assertJsonPath('data.language', 'ja');
 
-        Http::assertSent(fn (Request $request) => $request->url() === 'https://graph.facebook.com/v25.0/waba-1/message_templates'
-            && $request['language'] === 'ja'
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://graph.facebook.com/v25.0/waba-1/upsert_message_templates'
+            && $request['languages'] === ['ja']
             && ! isset($request['parameter_format'])
             && $request['components'] === [
                 ['type' => 'BODY', 'add_security_recommendation' => true],
@@ -178,10 +178,10 @@ class WhatsappTemplateManagementTest extends TestCase
                 ['type' => 'BUTTONS', 'buttons' => [[
                     'type' => 'OTP',
                     'otp_type' => 'ONE_TAP',
-                    'text' => 'Copy Code',
-                    'autofill_text' => 'Autofill',
-                    'package_name' => 'com.example.app',
-                    'signature_hash' => 'K8a/AINcGX7',
+                    'supported_apps' => [[
+                        'package_name' => 'com.example.app',
+                        'signature_hash' => 'K8a/AINcGX7',
+                    ]],
                 ]]],
             ]);
     }
