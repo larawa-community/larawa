@@ -187,7 +187,7 @@
                     </div>
                 </header>
                 @endunless
-                <div class="p-4 sm:p-6">
+                <div class="{{ $compactChrome ? 'p-3' : 'p-4 sm:p-6' }}" @if($compactChrome) data-compact-content-wrapper @endif>
                     @if (session('status'))
                         <div class="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('status') }}</div>
                     @endif

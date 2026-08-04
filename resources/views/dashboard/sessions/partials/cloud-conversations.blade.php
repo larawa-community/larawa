@@ -1,5 +1,6 @@
 @php
     $windowOpen = $selectedConversation?->serviceWindowIsOpen() ?? false;
+    $mobileShowingDetail = $selectedConversation && request()->routeIs('dashboard.sessions.conversations.show');
     $snapshotUrl = route('dashboard.sessions.conversations.snapshot', array_filter([
         'session' => $session,
         'selected' => $selectedConversation?->id,
@@ -8,13 +9,14 @@
 @endphp
 
 <section
-    class="h-[calc(100dvh-15rem)] min-h-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+    class="h-[calc(100dvh-15rem)] min-h-[480px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-[560px]"
     data-cloud-inbox
     data-cloud-inbox-snapshot-url="{{ $snapshotUrl }}"
     data-cloud-inbox-selected-id="{{ $selectedConversation?->id }}"
+    data-cloud-inbox-mobile-detail="{{ $mobileShowingDetail ? 'true' : 'false' }}"
 >
-    <div class="grid h-full min-h-0 grid-rows-[minmax(200px,35%)_minmax(0,1fr)] lg:grid-cols-[340px_minmax(0,1fr)] lg:grid-rows-1">
-        <aside class="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 lg:border-b-0 lg:border-r">
+    <div class="h-full min-h-0 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside class="{{ $mobileShowingDetail ? 'hidden' : 'flex' }} h-full min-h-0 flex-col bg-slate-50/70 lg:flex lg:border-r lg:border-slate-200">
             <div class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4">
                 <div>
                     <h3 class="font-semibold text-slate-900">Customer inbox</h3>
@@ -27,8 +29,14 @@
             </div>
             <div class="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto" data-cloud-inbox-conversations>
                 @forelse ($conversations as $conversation)
-                    @php $isOpen = $conversation->serviceWindowIsOpen(); @endphp
-                    <a href="{{ route('dashboard.sessions.conversations.show', [$session, $conversation]) }}" class="block border-l-4 px-4 py-4 transition {{ $selectedConversation?->id === $conversation->id ? 'border-[#128c42] bg-white shadow-sm' : 'border-transparent hover:bg-white' }}">
+                    @php
+                        $isOpen = $conversation->serviceWindowIsOpen();
+                        $isSelected = $selectedConversation?->id === $conversation->id;
+                        $selectedTone = $mobileShowingDetail
+                            ? 'border-[#128c42] bg-white shadow-sm'
+                            : 'border-transparent lg:border-[#128c42] lg:bg-white lg:shadow-sm';
+                    @endphp
+                    <a href="{{ route('dashboard.sessions.conversations.show', [$session, $conversation]) }}" class="block border-l-4 px-4 py-4 transition {{ $isSelected ? $selectedTone : 'border-transparent hover:bg-white' }}">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <div class="truncate text-sm font-semibold text-slate-900">{{ $conversation->customer_name ?: 'WhatsApp customer' }}</div>
@@ -54,14 +62,19 @@
             @endif
         </aside>
 
-        <div class="flex min-h-0 min-w-0 flex-col">
+        <div class="{{ $mobileShowingDetail ? 'flex' : 'hidden' }} h-full min-h-0 min-w-0 flex-col lg:flex">
             @if ($selectedConversation)
-                <header class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
-                    <div>
-                        <h3 class="font-semibold text-slate-900" data-cloud-inbox-customer-name>{{ $selectedConversation->customer_name ?: 'WhatsApp customer' }}</h3>
-                        <p class="mt-1 font-mono text-xs text-slate-500" data-cloud-inbox-customer-number>+{{ ltrim($selectedConversation->customer_wa_id, '+') }}</p>
+                <header class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
+                    <div class="flex min-w-0 items-start gap-2.5">
+                        <a href="{{ route('dashboard.sessions.conversations.index', $session) }}" class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 lg:hidden" aria-label="Back to customer inbox" title="Back to customer inbox">
+                            <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true"><path d="m14.7 5.3-1.4-1.4L5.2 12l8.1 8.1 1.4-1.4L9 13h10v-2H9l5.7-5.7Z"/></svg>
+                        </a>
+                        <div class="min-w-0">
+                            <h3 class="truncate font-semibold text-slate-900" data-cloud-inbox-customer-name>{{ $selectedConversation->customer_name ?: 'WhatsApp customer' }}</h3>
+                            <p class="mt-1 truncate font-mono text-xs text-slate-500" data-cloud-inbox-customer-number>+{{ ltrim($selectedConversation->customer_wa_id, '+') }}</p>
+                        </div>
                     </div>
-                    <div class="rounded-lg border px-3 py-2 text-right {{ $windowOpen ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50' }}" data-cloud-inbox-window>
+                    <div class="w-full rounded-lg border px-3 py-2 text-left sm:w-auto sm:text-right {{ $windowOpen ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50' }}" data-cloud-inbox-window>
                         <div class="text-xs font-bold uppercase tracking-wide {{ $windowOpen ? 'text-emerald-700' : 'text-amber-800' }}" data-cloud-inbox-window-title>24-hour service window {{ $windowOpen ? 'open' : 'closed' }}</div>
                         <div class="mt-1 text-xs text-slate-600" data-cloud-inbox-window-detail>
                             {{ $windowOpen ? 'Free-form replies until '.$selectedConversation->service_window_expires_at?->format('M j, Y H:i T') : 'Replies are paused until the customer messages this number again.' }}
@@ -69,7 +82,7 @@
                     </div>
                 </header>
 
-                <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_top_left,#f1faf5,transparent_42%)] px-4 py-6 sm:px-7" data-cloud-inbox-messages>
+                <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_top_left,#f1faf5,transparent_42%)] px-3 py-4 sm:px-7 sm:py-6" data-cloud-inbox-messages>
                     @forelse ($conversationMessages as $message)
                         @php $outgoing = $message->direction === 'outgoing'; @endphp
                         <div class="flex {{ $outgoing ? 'justify-end' : 'justify-start' }}">
@@ -89,15 +102,15 @@
                     @endforelse
                 </div>
 
-                <footer class="shrink-0 border-t border-slate-200 bg-white p-4 sm:p-5">
-                    <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.text', [$session, $selectedConversation]) }}" class="{{ $windowOpen ? 'flex' : 'hidden' }} items-end gap-3" data-cloud-inbox-reply-form>
+                <footer class="shrink-0 border-t border-slate-200 bg-white p-3 sm:p-5">
+                    <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.text', [$session, $selectedConversation]) }}" class="{{ $windowOpen ? 'flex' : 'hidden' }} flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-3" data-cloud-inbox-reply-form>
                         @csrf
                         <label class="min-w-0 flex-1">
                             <span class="sr-only">Free-form reply</span>
                             <textarea name="text" required maxlength="4096" rows="2" placeholder="Reply to the customer…" class="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15" data-cloud-inbox-reply-text>{{ old('text') }}</textarea>
-                            <span class="mt-1 block text-right text-[10px] text-slate-400"><kbd class="font-sans">⌘ Enter</kbd> / <kbd class="font-sans">Ctrl Enter</kbd> to send</span>
+                            <span class="mt-1 hidden text-right text-[10px] text-slate-400 sm:block"><kbd class="font-sans">⌘ Enter</kbd> / <kbd class="font-sans">Ctrl Enter</kbd> to send</span>
                         </label>
-                        <button class="rounded-xl bg-[#128c42] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39]" title="Send with Command+Enter or Ctrl+Enter">Send reply</button>
+                        <button class="w-full rounded-xl bg-[#128c42] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39] sm:w-auto" title="Send with Command+Enter or Ctrl+Enter">Send reply</button>
                     </form>
                     <div class="{{ $windowOpen ? 'hidden' : '' }} rounded-xl border border-amber-200 bg-amber-50 px-4 py-3" data-cloud-inbox-reply-closed>
                         <div class="text-sm font-semibold text-amber-900">Free-form reply unavailable</div>

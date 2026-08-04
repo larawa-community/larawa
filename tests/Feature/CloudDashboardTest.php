@@ -53,6 +53,8 @@ class CloudDashboardTest extends TestCase
             ->assertSee('Settings')
             ->assertSee('data-collapsible-sidebar', false)
             ->assertSee('data-sidebar-toggle', false)
+            ->assertSee('data-compact-content-wrapper', false)
+            ->assertSee('data-cloud-inbox-mobile-detail="false"', false)
             ->assertSee('data-cloud-inbox', false)
             ->assertSee('data-cloud-inbox-reply-text', false)
             ->assertSee('⌘ Enter')
@@ -208,6 +210,8 @@ class CloudDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('24-hour service window closed')
             ->assertSee('Free-form reply unavailable')
+            ->assertSee('data-cloud-inbox-mobile-detail="true"', false)
+            ->assertSee('Back to customer inbox')
             ->assertSee('Replies are paused until the customer messages this number again.')
             ->assertDontSee('Send an approved template');
 

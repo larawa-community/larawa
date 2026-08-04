@@ -7,24 +7,24 @@
 @endphp
 
 <x-layouts.app :workspace="$workspace" :title="$session->name" :compact-chrome="true">
-    <div class="space-y-5" data-cloud-session-workspace>
+    <div class="space-y-3 sm:space-y-5" data-cloud-session-workspace>
         <header class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="bg-[linear-gradient(125deg,#062d22_0%,#0d6848_68%,#18a56c_100%)] px-5 py-6 text-white sm:px-7">
-                <div class="flex flex-wrap items-start justify-between gap-5">
+            <div class="bg-[linear-gradient(125deg,#062d22_0%,#0d6848_68%,#18a56c_100%)] px-4 py-4 text-white sm:px-7 sm:py-6">
+                <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-5">
                     <div>
                         <a href="{{ route('dashboard.sessions.index') }}" class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100 hover:text-white">← All sessions</a>
                         <div class="mt-3 flex flex-wrap items-center gap-3">
-                            <h2 class="text-2xl font-semibold tracking-tight">{{ $session->name }}</h2>
+                            <h2 class="text-xl font-semibold tracking-tight sm:text-2xl">{{ $session->name }}</h2>
                             <span class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold">Official Cloud API</span>
                         </div>
-                        <p class="mt-2 font-mono text-xs text-emerald-100">{{ $session->uuid }}</p>
+                        <p class="mt-2 font-mono text-xs text-emerald-100 {{ $activeSection === 'conversations' ? 'hidden sm:block' : '' }}">{{ $session->uuid }}</p>
                     </div>
-                    <div class="grid grid-cols-2 gap-2 text-sm sm:flex">
-                        <div class="rounded-lg border border-white/15 bg-white/10 px-4 py-2.5">
+                    <div class="w-full grid-cols-2 gap-2 text-sm sm:w-auto sm:flex {{ $activeSection === 'conversations' ? 'hidden' : 'grid' }}">
+                        <div class="min-w-0 rounded-lg border border-white/15 bg-white/10 px-3 py-2.5 sm:px-4">
                             <div class="text-xs text-emerald-100">Business number</div>
-                            <div class="mt-0.5 font-semibold">{{ $session->phone_number ?: 'Not connected' }}</div>
+                            <div class="mt-0.5 truncate font-semibold">{{ $session->phone_number ?: 'Not connected' }}</div>
                         </div>
-                        <div class="rounded-lg border border-white/15 bg-white/10 px-4 py-2.5">
+                        <div class="min-w-0 rounded-lg border border-white/15 bg-white/10 px-3 py-2.5 sm:px-4">
                             <div class="text-xs text-emerald-100">Connection</div>
                             <div class="mt-0.5 font-semibold capitalize">{{ $session->status }}</div>
                         </div>

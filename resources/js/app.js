@@ -518,6 +518,7 @@ if (cloudInbox) {
     const baseDelay = 5000;
     const maximumDelay = 30000;
     const selectedId = cloudInbox.dataset.cloudInboxSelectedId || '';
+    const mobileShowingDetail = cloudInbox.dataset.cloudInboxMobileDetail === 'true';
     const conversationList = cloudInbox.querySelector('[data-cloud-inbox-conversations]');
     const messageList = cloudInbox.querySelector('[data-cloud-inbox-messages]');
     const total = cloudInbox.querySelector('[data-cloud-inbox-total]');
@@ -545,7 +546,8 @@ if (cloudInbox) {
 
     function renderConversation(conversation) {
         const link = document.createElement('a');
-        const isSelected = String(conversation.id) === selectedId;
+        const isSelected = String(conversation.id) === selectedId
+            && (mobileShowingDetail || window.matchMedia('(min-width: 1024px)').matches);
         link.href = conversation.show_url;
         link.className = `block border-l-4 px-4 py-4 transition ${isSelected ? 'border-[#128c42] bg-white shadow-sm' : 'border-transparent hover:bg-white'}`;
 
@@ -727,7 +729,7 @@ if (cloudInbox) {
             if (!response.ok) throw new Error(`Inbox snapshot failed with HTTP ${response.status}.`);
 
             const snapshot = await response.json();
-            if (!selectedId && snapshot.conversations?.length > 0) {
+            if (!selectedId && snapshot.conversations?.length > 0 && window.matchMedia('(min-width: 1024px)').matches) {
                 window.location.assign(snapshot.conversations[0].show_url);
                 return;
             }
