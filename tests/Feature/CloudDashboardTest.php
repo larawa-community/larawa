@@ -258,6 +258,13 @@ class CloudDashboardTest extends TestCase
     public function test_cloud_settings_show_whatsapp_account_management_only_to_admins(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard*' => Http::response([
+                'verified_name' => 'Acme Support',
+                'name_status' => 'APPROVED',
+                'is_pin_enabled' => true,
+            ]),
+        ]);
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -266,7 +273,11 @@ class CloudDashboardTest extends TestCase
             ->assertSee('WhatsApp account')
             ->assertSee('Set two-step verification PIN')
             ->assertSee('Request a new display name')
-            ->assertSee('Apply approved name');
+            ->assertSee('Apply approved name')
+            ->assertSee('data-meta-action-loading', false)
+            ->assertSee('data-meta-action-form', false);
+
+        Http::assertSentCount(1);
 
         $user = User::factory()->create();
         $workspace->users()->attach($user, ['role' => 'workspace_user']);
@@ -276,6 +287,70 @@ class CloudDashboardTest extends TestCase
             ->assertOk()
             ->assertDontSee('Set two-step verification PIN')
             ->assertDontSee('Request a new display name');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_cloud_settings_refresh_account_status_from_meta_when_the_page_opens(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard*' => Http::response([
+                'display_phone_number' => '+81 90 9876 5432',
+                'verified_name' => 'Acme Live Support',
+                'name_status' => 'APPROVED',
+                'new_display_name' => 'Acme Concierge',
+                'new_name_status' => 'PENDING_REVIEW',
+                'is_pin_enabled' => true,
+            ]),
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.cloud-settings', $session))
+            ->assertOk()
+            ->assertSee('Acme Live Support')
+            ->assertSee('Acme Concierge')
+            ->assertSee('Enabled')
+            ->assertDontSee('UNKNOWN')
+            ->assertDontSee('Not refreshed');
+
+        Http::assertSent(fn ($request) => $request->method() === 'GET'
+            && $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard?fields=display_phone_number%2Cverified_name%2Cname_status%2Cnew_display_name%2Cnew_name_status%2Cis_pin_enabled');
+        $freshSession = $session->fresh();
+        $this->assertSame('+81 90 9876 5432', $freshSession->phone_number);
+        $this->assertSame('Acme Live Support', data_get($freshSession->metadata, 'cloud_api.account.verified_name'));
+        $this->assertNotNull(data_get($freshSession->metadata, 'cloud_api.account.refreshed_at'));
+    }
+
+    public function test_cloud_settings_show_last_known_account_status_when_meta_is_unavailable(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        $session->update([
+            'metadata' => [
+                'cloud_api' => [
+                    'account' => [
+                        'verified_name' => 'Cached Support',
+                        'name_status' => 'APPROVED',
+                        'is_pin_enabled' => false,
+                    ],
+                ],
+            ],
+        ]);
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard*' => Http::response([
+                'error' => ['message' => 'Meta is temporarily unavailable.'],
+            ], 503),
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.cloud-settings', $session))
+            ->assertOk()
+            ->assertSee('Live account status could not be refreshed')
+            ->assertSee('Meta is temporarily unavailable.')
+            ->assertSee('Cached Support')
+            ->assertSee('Not enabled');
     }
 
     public function test_admin_can_set_cloud_account_two_factor_pin_without_storing_it(): void

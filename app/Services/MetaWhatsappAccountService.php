@@ -10,6 +10,15 @@ use Illuminate\Validation\ValidationException;
 
 class MetaWhatsappAccountService
 {
+    public function refreshDetails(WhatsappSession $session): array
+    {
+        $details = $this->details($session);
+
+        $this->storeDetails($session, $details);
+
+        return $details;
+    }
+
     public function details(WhatsappSession $session): array
     {
         $config = $this->credentials($session);
@@ -55,6 +64,27 @@ class MetaWhatsappAccountService
         ])->throw()->json();
 
         return ['details' => $details, 'response' => $result];
+    }
+
+    public function storeDetails(WhatsappSession $session, array $details): void
+    {
+        $fields = collect($details)->only([
+            'display_phone_number',
+            'verified_name',
+            'name_status',
+            'new_display_name',
+            'new_name_status',
+            'is_pin_enabled',
+        ])->all();
+        $fields['refreshed_at'] = now()->toISOString();
+
+        $metadata = $session->metadata ?: [];
+        data_set($metadata, 'cloud_api.account', array_merge(data_get($metadata, 'cloud_api.account', []), $fields));
+        $session->update(['metadata' => $metadata]);
+
+        if (filled($details['display_phone_number'] ?? null)) {
+            $session->update(['phone_number' => $details['display_phone_number']]);
+        }
     }
 
     private function credentials(WhatsappSession $session): WhatsappCloudConfig

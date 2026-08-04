@@ -18,7 +18,7 @@ class CloudAccountController extends Controller
         $this->authorizeSession($request, $session);
 
         try {
-            $this->storeDetails($session, $account->details($session));
+            $account->refreshDetails($session);
         } catch (ConnectionException|RequestException $exception) {
             return back()->with('error', $this->providerError($exception));
         }
@@ -101,7 +101,7 @@ class CloudAccountController extends Controller
         $details['name_status'] = 'APPROVED';
         $details['new_display_name'] = null;
         $details['new_name_status'] = null;
-        $this->storeDetails($session, $details);
+        $account->storeDetails($session, $details);
         $audit->log('cloud_account.display_name_applied', $workspace, $request->user(), auditable: $session, metadata: ['display_name' => $approvedName], request: $request);
 
         return back()->with('status', 'The approved display name was applied to the WhatsApp phone number.');
@@ -115,24 +115,6 @@ class CloudAccountController extends Controller
         abort_unless($session->isCloudApi(), 404);
 
         return $workspace;
-    }
-
-    private function storeDetails(WhatsappSession $session, array $details): void
-    {
-        $fields = collect($details)->only([
-            'display_phone_number',
-            'verified_name',
-            'name_status',
-            'new_display_name',
-            'new_name_status',
-            'is_pin_enabled',
-        ])->all();
-        $fields['refreshed_at'] = now()->toISOString();
-        $this->updateAccountMetadata($session, $fields);
-
-        if (filled($details['display_phone_number'] ?? null)) {
-            $session->update(['phone_number' => $details['display_phone_number']]);
-        }
     }
 
     private function updateAccountMetadata(WhatsappSession $session, array $account): void

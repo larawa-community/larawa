@@ -7,6 +7,9 @@ use App\Models\WhatsappConversation;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
+use App\Services\MetaWhatsappAccountService;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,16 +36,33 @@ class CloudConversationController extends Controller
         return $this->render($request, $session, $conversation);
     }
 
-    public function settings(Request $request, WhatsappSession $session): View
-    {
+    public function settings(
+        Request $request,
+        WhatsappSession $session,
+        MetaWhatsappAccountService $account,
+    ): View {
         $this->authorizeCloudSession($request, $session, 'cloud-conversations.view');
+        $canManageSessions = $request->user()->can('sessions.manage', $session->workspace);
+        $accountRefreshError = null;
+
+        if ($canManageSessions && $session->cloudConfig?->isConfigured()) {
+            try {
+                $account->refreshDetails($session);
+                $session->refresh()->load('cloudConfig', 'workspace');
+            } catch (ConnectionException|RequestException $exception) {
+                $accountRefreshError = $exception instanceof RequestException
+                    ? ($exception->response->json('error.message') ?: $exception->response->json('message') ?: 'Meta rejected the account status request.')
+                    : 'Meta is unreachable. The last known account status is shown.';
+            }
+        }
 
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
             'session' => $session,
             'activeSection' => 'settings',
-            'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
+            'canManageSessions' => $canManageSessions,
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
+            'accountRefreshError' => $accountRefreshError,
         ]);
     }
 

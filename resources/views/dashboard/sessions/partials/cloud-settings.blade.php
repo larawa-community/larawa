@@ -15,10 +15,10 @@
     <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
         <header class="border-b border-slate-200 px-5 py-5 sm:px-6">
             <h3 class="font-semibold text-slate-900">Meta Cloud configuration</h3>
-            <p class="mt-1 text-sm text-slate-500">Connection checks and Graph API calls run only when you submit an action.</p>
+            <p class="mt-1 text-sm text-slate-500">Account status is refreshed from Meta when this page opens. Other Graph API calls run when you submit an action.</p>
         </header>
         @if ($canManageSessions)
-            <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="space-y-5 px-5 py-5 sm:px-6">
+            <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="space-y-5 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Validating configuration with Meta…">
                 @csrf @method('PATCH')
                 <div class="grid gap-4 sm:grid-cols-2">
                     <label class="block text-sm font-semibold text-slate-700">
@@ -62,11 +62,17 @@
                     <h3 class="font-semibold text-slate-900">WhatsApp account</h3>
                     <p class="mt-1 text-sm text-slate-500">Manage security and the customer-facing name for this business phone number.</p>
                 </div>
-                <form method="POST" action="{{ route('dashboard.sessions.cloud-account.refresh', $session) }}">
+                <form method="POST" action="{{ route('dashboard.sessions.cloud-account.refresh', $session) }}" data-meta-action-form data-meta-action-label="Refreshing account status…">
                     @csrf
                     <button class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Refresh account status</button>
                 </form>
             </header>
+
+            @if (filled($accountRefreshError ?? null))
+                <div class="border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-800 sm:px-6">
+                    Live account status could not be refreshed: {{ $accountRefreshError }} Showing the last known values below.
+                </div>
+            @endif
 
             <div class="grid gap-4 border-b border-slate-100 bg-slate-50/60 px-5 py-4 text-sm sm:grid-cols-3 sm:px-6">
                 <div>
@@ -96,7 +102,7 @@
                 <div>
                     <h4 class="text-sm font-semibold text-slate-900">Set two-step verification PIN</h4>
                     <p class="mt-1 text-xs leading-5 text-slate-500">Choose a six-digit PIN. LaraWA sends it directly to Meta and does not store it.</p>
-                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.two-factor', $session) }}" class="mt-4 space-y-3">
+                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.two-factor', $session) }}" class="mt-4 space-y-3" data-meta-action-form data-meta-action-label="Updating two-step verification…">
                         @csrf
                         <div class="grid gap-3 sm:grid-cols-2">
                             <label class="block text-xs font-semibold text-slate-600">
@@ -115,7 +121,7 @@
                 <div class="border-t border-slate-100 pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
                     <h4 class="text-sm font-semibold text-slate-900">Request a new display name</h4>
                     <p class="mt-1 text-xs leading-5 text-slate-500">The name is reviewed by Meta before it can be applied to this phone number.</p>
-                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.display-name.request', $session) }}" class="mt-4 space-y-3">
+                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.display-name.request', $session) }}" class="mt-4 space-y-3" data-meta-action-form data-meta-action-label="Submitting the display name to Meta…">
                         @csrf
                         <label class="block text-xs font-semibold text-slate-600">
                             New display name
@@ -124,7 +130,7 @@
                         <button class="rounded-lg border border-[#128c42] px-4 py-2.5 text-sm font-semibold text-[#128c42] hover:bg-emerald-50">Request Meta approval</button>
                     </form>
 
-                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.display-name.apply', $session) }}" class="mt-5 border-t border-slate-100 pt-5">
+                    <form method="POST" action="{{ route('dashboard.sessions.cloud-account.display-name.apply', $session) }}" class="mt-5 border-t border-slate-100 pt-5" data-meta-action-form data-meta-action-label="Applying the approved display name…">
                         @csrf
                         <label class="block text-xs font-semibold text-slate-600">
                             Two-step verification PIN
@@ -158,8 +164,8 @@
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Connection controls</h3>
-                <p class="mt-2 text-xs leading-5 text-slate-500">There is no background connection check on this page.</p>
-                <form method="POST" action="{{ route('dashboard.sessions.refresh', $session) }}" class="mt-4">
+                <p class="mt-2 text-xs leading-5 text-slate-500">Run a full connection check whenever credentials or permissions change.</p>
+                <form method="POST" action="{{ route('dashboard.sessions.refresh', $session) }}" class="mt-4" data-meta-action-form data-meta-action-label="Testing the Meta connection…">
                     @csrf
                     <button class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Test connection now</button>
                 </form>
@@ -176,3 +182,16 @@
         @endif
     </aside>
 </div>
+
+@if ($canManageSessions)
+    <div class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm" data-meta-action-loading role="status" aria-live="polite" aria-hidden="true">
+        <div class="w-full max-w-sm rounded-2xl border border-white/70 bg-white p-6 text-center shadow-2xl">
+            <svg class="mx-auto h-10 w-10 animate-spin text-[#128c42]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle class="opacity-20" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3"></circle>
+                <path class="opacity-90" d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+            </svg>
+            <h2 class="mt-4 text-base font-semibold text-slate-900" data-meta-action-loading-label>Contacting Meta…</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Please keep this page open. This request can take a moment.</p>
+        </div>
+    </div>
+@endif

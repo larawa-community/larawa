@@ -2,6 +2,51 @@ import { Passkeys } from '@laravel/passkeys';
 
 const refreshTarget = document.querySelector('[data-auto-refresh-ms]');
 
+const metaActionOverlay = document.querySelector('[data-meta-action-loading]');
+const metaActionLabel = metaActionOverlay?.querySelector('[data-meta-action-loading-label]');
+
+document.querySelectorAll('[data-meta-action-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+        if (event.defaultPrevented) return;
+
+        if (form.dataset.metaSubmitting === 'true') {
+            event.preventDefault();
+            return;
+        }
+
+        form.dataset.metaSubmitting = 'true';
+        form.setAttribute('aria-busy', 'true');
+        form.querySelectorAll('button[type="submit"], button:not([type])').forEach((button) => {
+            button.dataset.metaWasDisabled = button.disabled ? 'true' : 'false';
+            button.disabled = true;
+        });
+
+        if (metaActionOverlay) {
+            if (metaActionLabel) {
+                metaActionLabel.textContent = form.dataset.metaActionLabel || 'Contacting Meta…';
+            }
+            metaActionOverlay.classList.remove('hidden');
+            metaActionOverlay.classList.add('flex');
+            metaActionOverlay.setAttribute('aria-hidden', 'false');
+        }
+    });
+});
+
+window.addEventListener('pageshow', () => {
+    document.querySelectorAll('[data-meta-action-form]').forEach((form) => {
+        delete form.dataset.metaSubmitting;
+        form.removeAttribute('aria-busy');
+        form.querySelectorAll('[data-meta-was-disabled]').forEach((button) => {
+            button.disabled = button.dataset.metaWasDisabled === 'true';
+            delete button.dataset.metaWasDisabled;
+        });
+    });
+
+    metaActionOverlay?.classList.add('hidden');
+    metaActionOverlay?.classList.remove('flex');
+    metaActionOverlay?.setAttribute('aria-hidden', 'true');
+});
+
 document.querySelectorAll('[data-auto-submit]').forEach((form) => {
     const fallback = form.querySelector('[data-auto-submit-fallback]');
 
