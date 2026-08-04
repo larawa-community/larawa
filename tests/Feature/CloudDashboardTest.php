@@ -156,7 +156,13 @@ class CloudDashboardTest extends TestCase
             ->get(route('dashboard.sessions.templates.index', $session))
             ->assertOk()
             ->assertSee('order_update')
-            ->assertSee('REJECTED')
+            ->assertSee('REJECTED');
+
+        $template = $session->messageTemplates()->where('name', 'order_update')->firstOrFail();
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->assertOk()
             ->assertSee('Body is too vague.');
     }
 
@@ -185,6 +191,13 @@ class CloudDashboardTest extends TestCase
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->get(route('dashboard.sessions.templates.index', $session))
             ->assertOk()
+            ->assertSee(route('dashboard.sessions.templates.show', [$session, $template]), false)
+            ->assertDontSee('Body value 1');
+
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->assertOk()
             ->assertSee('Body value 1')
             ->assertSee('Body value 2');
 
@@ -200,6 +213,65 @@ class CloudDashboardTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard/messages'
             && $request['template']['components'][0]['parameters'][0]['text'] === 'Aiko'
             && $request['template']['components'][0]['parameters'][1]['text'] === 'A-123');
+    }
+
+    public function test_template_detail_explains_status_without_showing_meta_none_as_a_rejection(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        $template = WhatsappMessageTemplate::create([
+            'whatsapp_cloud_config_id' => $session->cloudConfig->id,
+            'meta_template_id' => 'meta-approved-none',
+            'name' => 'approved_notice',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'parameter_format' => 'POSITIONAL',
+            'components' => [['type' => 'BODY', 'text' => 'Your order is ready.']],
+            'status' => 'APPROVED',
+            'quality_score' => 'UNKNOWN',
+            'rejection_reason' => 'NONE',
+            'last_synced_at' => now(),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->assertOk()
+            ->assertSee('Approved by Meta and ready to send.')
+            ->assertSee('Not rated')
+            ->assertDontSee('Meta review:')
+            ->assertDontSee('Meta rejection reason:')
+            ->assertDontSee('UNKNOWN');
+    }
+
+    public function test_create_and_edit_pages_include_a_local_live_preview(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        $template = WhatsappMessageTemplate::create([
+            'whatsapp_cloud_config_id' => $session->cloudConfig->id,
+            'meta_template_id' => 'meta-preview',
+            'name' => 'preview_notice',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'parameter_format' => 'NAMED',
+            'components' => [['type' => 'BODY', 'text' => 'Hello {{customer_name}}.']],
+            'status' => 'APPROVED',
+            'is_active' => true,
+        ]);
+
+        foreach ([
+            route('dashboard.sessions.templates.create', $session),
+            route('dashboard.sessions.templates.edit', [$session, $template]),
+        ] as $url) {
+            $this->actingAs($admin)
+                ->withSession(['dashboard_workspace_id' => $workspace->id])
+                ->get($url)
+                ->assertOk()
+                ->assertSee('Quick preview')
+                ->assertSee('data-template-editor', false)
+                ->assertSee('data-template-preview-body', false)
+                ->assertSee('nothing is uploaded');
+        }
     }
 
     /** @return array{Workspace, WhatsappSession, User} */

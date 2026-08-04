@@ -31,6 +31,14 @@ class CloudTemplateController extends Controller
         return $this->render($request, $session, editorMode: 'create');
     }
 
+    public function show(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template): View
+    {
+        $this->authorizeCloudSession($request, $session, 'cloud-templates.view');
+        $this->assertTemplateBelongsToSession($template, $session);
+
+        return $this->render($request, $session, templateDetail: $template);
+    }
+
     public function edit(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
@@ -224,6 +232,7 @@ class CloudTemplateController extends Controller
         WhatsappSession $session,
         ?WhatsappMessageTemplate $editingTemplate = null,
         ?string $editorMode = null,
+        ?WhatsappMessageTemplate $templateDetail = null,
     ): View {
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
@@ -232,6 +241,7 @@ class CloudTemplateController extends Controller
             'templates' => $session->messageTemplates()->orderBy('name')->orderBy('language')->paginate(30),
             'editingTemplate' => $editingTemplate,
             'editorMode' => $editorMode,
+            'templateDetail' => $templateDetail,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
         ]);

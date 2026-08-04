@@ -136,7 +136,7 @@ class MetaWhatsappTemplateService
                 'components' => $components,
                 'status' => $result['status'] ?? 'PENDING',
                 'quality_score' => $this->qualityScore($result['quality_score'] ?? null),
-                'rejection_reason' => $result['rejected_reason'] ?? null,
+                'rejection_reason' => $this->nullableMetaValue($result['rejected_reason'] ?? null),
                 'last_synced_at' => now(),
                 'is_active' => true,
             ],
@@ -174,7 +174,7 @@ class MetaWhatsappTemplateService
             'components' => $components,
             'status' => $result['status'] ?? 'PENDING',
             'quality_score' => $this->qualityScore($result['quality_score'] ?? null),
-            'rejection_reason' => $result['rejected_reason'] ?? null,
+            'rejection_reason' => $this->nullableMetaValue($result['rejected_reason'] ?? null),
             'last_synced_at' => now(),
             'is_active' => true,
         ], fn ($value) => $value !== null));
@@ -317,7 +317,7 @@ class MetaWhatsappTemplateService
             'components' => $remote['components'] ?? [],
             'status' => $remote['status'] ?? 'PENDING',
             'quality_score' => $this->qualityScore($remote['quality_score'] ?? null),
-            'rejection_reason' => $remote['rejected_reason'] ?? null,
+            'rejection_reason' => $this->nullableMetaValue($remote['rejected_reason'] ?? null),
             'remote_created_at' => $remote['created_time'] ?? null,
             'remote_updated_at' => $remote['last_updated_time'] ?? null,
             'last_synced_at' => $syncedAt,
@@ -328,10 +328,19 @@ class MetaWhatsappTemplateService
     private function qualityScore(mixed $quality): ?string
     {
         if (is_array($quality)) {
-            return $quality['score'] ?? null;
+            $quality = $quality['score'] ?? null;
         }
 
-        return filled($quality) ? (string) $quality : null;
+        return $this->nullableMetaValue($quality);
+    }
+
+    private function nullableMetaValue(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' || in_array(strtoupper($value), ['NONE', 'UNKNOWN', 'N/A'], true)
+            ? null
+            : $value;
     }
 
     private function http(WhatsappCloudConfig $config): PendingRequest

@@ -219,6 +219,92 @@ document.querySelectorAll('[data-test-message-form]').forEach((form) => {
     syncTestMessageFields();
 });
 
+document.querySelectorAll('[data-template-editor]').forEach((editor) => {
+    const form = editor.querySelector('[data-template-editor-form]');
+    const header = editor.querySelector('[data-template-preview-header]');
+    const body = editor.querySelector('[data-template-preview-body]');
+    const footer = editor.querySelector('[data-template-preview-footer]');
+    const media = editor.querySelector('[data-template-preview-media]');
+    const mediaImage = editor.querySelector('[data-template-preview-image]');
+    const mediaLabel = editor.querySelector('[data-template-preview-media-label]');
+    const buttons = editor.querySelector('[data-template-preview-buttons]');
+    let previewObjectUrl = null;
+
+    if (!form) return;
+
+    const value = (name) => form.elements.namedItem(name)?.value?.trim() || '';
+    const lines = (name) => value(name).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+    function examples() {
+        if (value('parameter_format') === 'NAMED') {
+            return Object.fromEntries(lines('body_named_examples').map((line) => {
+                const separator = line.indexOf('=');
+                return separator > 0 ? [line.slice(0, separator).trim(), line.slice(separator + 1).trim()] : [line, line];
+            }));
+        }
+
+        return lines('body_example_values');
+    }
+
+    function substituteVariables(text, suppliedExamples) {
+        return text.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*|\d+)\s*\}\}/g, (match, variable) => {
+            const replacement = Array.isArray(suppliedExamples)
+                ? suppliedExamples[Number.parseInt(variable, 10) - 1]
+                : suppliedExamples[variable];
+
+            return replacement || match;
+        });
+    }
+
+    function renderTemplatePreview() {
+        const headerType = value('header_type') || 'NONE';
+        const headerText = substituteVariables(value('header_text'), [value('header_example_text')]);
+        const bodyText = substituteVariables(value('body_text'), examples());
+        const footerText = value('footer_text');
+
+        header.textContent = headerText;
+        header.classList.toggle('hidden', headerType !== 'TEXT' || headerText === '');
+        body.textContent = bodyText || 'Your template body will appear here.';
+        footer.textContent = footerText;
+        footer.classList.toggle('hidden', footerText === '');
+
+        const sample = form.elements.namedItem('header_sample_media')?.files?.[0];
+        const isMedia = ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType);
+        media.classList.toggle('hidden', !isMedia);
+        mediaImage.classList.add('hidden');
+        mediaLabel.classList.remove('hidden');
+        mediaLabel.textContent = `${headerType.charAt(0)}${headerType.slice(1).toLowerCase()} header preview`;
+
+        if (previewObjectUrl) {
+            URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = null;
+        }
+
+        if (isMedia && headerType === 'IMAGE' && sample?.type.startsWith('image/')) {
+            previewObjectUrl = URL.createObjectURL(sample);
+            mediaImage.src = previewObjectUrl;
+            mediaImage.classList.remove('hidden');
+            mediaLabel.classList.add('hidden');
+        }
+
+        buttons.replaceChildren();
+        for (let index = 0; index < 3; index += 1) {
+            const type = value(`buttons[${index}][type]`);
+            const label = value(`buttons[${index}][text]`);
+            if (!type || !label) continue;
+
+            const previewButton = document.createElement('div');
+            previewButton.className = 'mt-3 border-t border-slate-100 pt-2 text-center text-sm font-semibold text-sky-600';
+            previewButton.textContent = label;
+            buttons.append(previewButton);
+        }
+    }
+
+    form.addEventListener('input', renderTemplatePreview);
+    form.addEventListener('change', renderTemplatePreview);
+    renderTemplatePreview();
+});
+
 const relativeTimeTargets = [...document.querySelectorAll('[data-relative-time]')];
 
 function relativeTimeLabel(timestamp) {

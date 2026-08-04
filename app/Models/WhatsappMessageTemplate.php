@@ -36,4 +36,34 @@ class WhatsappMessageTemplate extends Model
     {
         return $this->belongsTo(WhatsappCloudConfig::class, 'whatsapp_cloud_config_id');
     }
+
+    public function statusDescription(): string
+    {
+        return match ($this->status) {
+            'APPROVED' => 'Approved by Meta and ready to send.',
+            'PENDING', 'IN_APPEAL' => 'Submitted to Meta and awaiting review.',
+            'REJECTED' => 'Rejected by Meta. Review the reason below before creating a replacement or editing it.',
+            'PAUSED' => 'Paused by Meta because of recipient feedback or quality signals.',
+            'DISABLED' => 'Disabled by Meta and unavailable for sending.',
+            default => 'Status reported by Meta during the last synchronization.',
+        };
+    }
+
+    public function meaningfulRejectionReason(): ?string
+    {
+        $reason = trim((string) $this->rejection_reason);
+
+        return $reason === '' || in_array(strtoupper($reason), ['NONE', 'UNKNOWN', 'N/A'], true)
+            ? null
+            : $reason;
+    }
+
+    public function displayQualityScore(): string
+    {
+        $score = trim((string) $this->quality_score);
+
+        return $score === '' || in_array(strtoupper($score), ['NONE', 'UNKNOWN', 'N/A'], true)
+            ? 'Not rated'
+            : $score;
+    }
 }

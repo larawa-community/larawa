@@ -234,6 +234,8 @@ Text-header templates do not need an App ID. Image, video, and document header t
 
 Incoming customer messages are grouped into a local conversation inbox. LaraWA uses Meta's provider timestamp—not a database insertion time—to open a 24-hour customer-service window. Workspace users may reply with free-form text while that window is open; after it closes, Meta-bound free-form sends are rejected locally and an active `APPROVED` template must be used. The inbox, session status, and template catalog refresh only when an operator requests it; Official Cloud API pages never run Wrapper-style QR polling.
 
+Meta does not accept raw Base64 inside an image message payload. It accepts a previously uploaded Meta media ID or a public media link. LaraWA's `media_base64` input remains supported: LaraWA validates and stores the decoded file, uploads it directly to Meta's media endpoint, and sends the returned media ID. The image therefore does not need to be hosted at a public URL on your server.
+
 Wrapper sessions can select a ready Official session in the same workspace as their fallback. Automatic failover is limited to definitive pre-accept failures. Timeouts, ambiguous server errors, and asynchronous delivery failures are not resent automatically because doing so can produce duplicate messages.
 
 Outbound webhook delivery retries are controlled by `WEBHOOK_RETRY_ATTEMPTS` and comma-separated `WEBHOOK_RETRY_BACKOFF` seconds. LaraWA retries network failures, HTTP 408, 429, and 5xx responses until the configured attempt limit is reached, then marks the delivery `exhausted`. Permanent 4xx responses stay failed so invalid endpoints or payload contracts do not create noisy retry loops.
