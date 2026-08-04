@@ -15,7 +15,7 @@ class CloudDashboardTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_cloud_session_opens_conversation_workspace_without_worker_polling_and_fetches_templates_live(): void
+    public function test_cloud_session_opens_live_conversation_workspace_without_fetching_templates(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
         $conversation = WhatsappConversation::create([
@@ -38,7 +38,7 @@ class CloudDashboardTest extends TestCase
             'from' => $conversation->customer_wa_id,
             'body' => 'Can you help with my order?',
         ]);
-        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => []])]);
+        Http::fake();
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -48,15 +48,95 @@ class CloudDashboardTest extends TestCase
             ->assertSee('Aiko Tanaka')
             ->assertSee('Can you help with my order?')
             ->assertSee('24-hour service window open')
-            ->assertSee('Refresh inbox')
+            ->assertSee('Live updates')
             ->assertSee('Templates')
             ->assertSee('Settings')
+            ->assertSee('data-cloud-inbox', false)
+            ->assertSee(route('dashboard.sessions.conversations.snapshot', ['session' => $session, 'selected' => $conversation->id]), false)
+            ->assertDontSee('Refresh inbox')
+            ->assertDontSee('Send an approved template')
             ->assertDontSee('data-auto-refresh-ms', false)
             ->assertDontSee('data-session-live-url', false)
             ->assertDontSee('Live WhatsApp Discovery');
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn ($request) => str_contains($request->url(), '/waba-dashboard/message_templates'));
+        Http::assertNothingSent();
+    }
+
+    public function test_conversation_snapshot_returns_live_inbox_and_selected_message_state(): void
+    {
+        [$workspace, $session, $user] = $this->cloudSession('workspace_user');
+        $selected = $this->conversation($workspace, $session, now()->addHours(20));
+        $selected->update(['latest_message_at' => now()->subMinute()]);
+        $message = Message::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'transport_session_id' => $session->id,
+            'conversation_id' => $selected->id,
+            'direction' => 'outgoing',
+            'type' => 'document',
+            'status' => 'read',
+            'to' => $selected->customer_wa_id,
+            'body' => 'Updated invoice',
+            'media_path' => 'messages/invoice.pdf',
+        ]);
+        $newest = WhatsappConversation::create([
+            'workspace_id' => $workspace->id,
+            'whatsapp_session_id' => $session->id,
+            'customer_wa_id' => '819099999999',
+            'customer_name' => 'Newest customer',
+            'latest_inbound_at' => now(),
+            'latest_message_at' => now(),
+            'service_window_expires_at' => now()->addDay(),
+        ]);
+
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->getJson(route('dashboard.sessions.conversations.snapshot', [
+                'session' => $session,
+                'selected' => $selected->id,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('pagination.total', 2)
+            ->assertJsonPath('conversations.0.id', $newest->id)
+            ->assertJsonPath('conversations.1.messages_count', 1)
+            ->assertJsonPath('selected.id', $selected->id)
+            ->assertJsonPath('selected.service_window_open', true)
+            ->assertJsonPath('messages.0.id', $message->id)
+            ->assertJsonPath('messages.0.status', 'read')
+            ->assertJsonPath('messages.0.body', 'Updated invoice')
+            ->assertJsonPath('messages.0.media_url', route('dashboard.messages.media', $message));
+    }
+
+    public function test_conversation_snapshot_is_authenticated_and_rejects_cross_session_or_workspace_access(): void
+    {
+        [$workspace, $session, $user] = $this->cloudSession('workspace_user');
+        $otherSession = $workspace->whatsappSessions()->create([
+            'name' => 'Other cloud session',
+            'type' => WhatsappSession::TYPE_CLOUD,
+            'status' => 'ready',
+        ]);
+        $otherConversation = $this->conversation($workspace, $otherSession, now()->addHour());
+        $url = route('dashboard.sessions.conversations.snapshot', [
+            'session' => $session,
+            'selected' => $otherConversation->id,
+        ]);
+
+        $this->getJson($url)->assertRedirect(route('login'));
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->getJson($url)
+            ->assertNotFound();
+
+        $otherWorkspace = Workspace::create(['name' => 'Other workspace', 'slug' => 'other-workspace']);
+        $otherWorkspaceSession = $otherWorkspace->whatsappSessions()->create([
+            'name' => 'Other workspace cloud session',
+            'type' => WhatsappSession::TYPE_CLOUD,
+            'status' => 'ready',
+        ]);
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->getJson(route('dashboard.sessions.conversations.snapshot', $otherWorkspaceSession))
+            ->assertForbidden();
     }
 
     public function test_workspace_user_can_reply_but_cannot_manage_templates(): void
@@ -102,7 +182,7 @@ class CloudDashboardTest extends TestCase
     {
         [$workspace, $session, $user] = $this->cloudSession('workspace_user');
         $conversation = $this->conversation($workspace, $session, now()->subMinute());
-        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => []])]);
+        Http::fake();
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -110,7 +190,8 @@ class CloudDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('24-hour service window closed')
             ->assertSee('Free-form reply unavailable')
-            ->assertDontSee('Reply to the customer');
+            ->assertSee('Replies are paused until the customer messages this number again.')
+            ->assertDontSee('Send an approved template');
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])

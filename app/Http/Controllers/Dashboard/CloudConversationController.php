@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\Dashboard;
 
-use App\Data\MetaWhatsappTemplate;
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappConversation;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
-use App\Services\MetaWhatsappTemplateService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -16,15 +15,11 @@ use Illuminate\View\View;
 
 class CloudConversationController extends Controller
 {
-    public function __construct(private readonly MetaWhatsappTemplateService $metaTemplates) {}
-
     public function index(Request $request, WhatsappSession $session): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-conversations.view');
 
-        $selected = $session->conversations()
-            ->latest('latest_message_at')
-            ->first();
+        $selected = $this->conversationQuery($session)->first();
 
         return $this->render($request, $session, $selected);
     }
@@ -50,6 +45,45 @@ class CloudConversationController extends Controller
         ]);
     }
 
+    public function snapshot(Request $request, WhatsappSession $session): JsonResponse
+    {
+        $this->authorizeCloudSession($request, $session, 'cloud-conversations.view');
+        $data = $request->validate([
+            'selected' => ['nullable', 'integer'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $selected = null;
+        if (isset($data['selected'])) {
+            $selected = WhatsappConversation::query()->findOrFail($data['selected']);
+            $this->assertConversationBelongsToSession($selected, $session);
+        }
+
+        $conversations = $this->conversationQuery($session)->paginate(30);
+
+        return response()->json([
+            'conversations' => $conversations->getCollection()
+                ->map(fn (WhatsappConversation $conversation) => $this->conversationData($session, $conversation))
+                ->values(),
+            'pagination' => [
+                'current_page' => $conversations->currentPage(),
+                'last_page' => $conversations->lastPage(),
+                'total' => $conversations->total(),
+            ],
+            'selected' => $selected ? $this->selectedConversationData($session, $selected) : null,
+            'messages' => $selected
+                ? $this->latestMessages($selected)->map(fn ($message) => [
+                    'id' => $message->id,
+                    'direction' => $message->direction,
+                    'body' => $message->body ?: ucfirst($message->type).' message',
+                    'status' => $message->status,
+                    'created_at_label' => $message->created_at?->format('M j, H:i'),
+                    'media_url' => $message->media_path ? route('dashboard.messages.media', $message) : null,
+                ])->values()
+                : [],
+        ]);
+    }
+
     public function reply(
         Request $request,
         WhatsappSession $session,
@@ -65,7 +99,7 @@ class CloudConversationController extends Controller
 
         if (! $conversation->serviceWindowIsOpen()) {
             throw ValidationException::withMessages([
-                'text' => 'The 24-hour customer service window is closed. Send an approved template to reopen the conversation.',
+                'text' => 'The 24-hour customer service window is closed. The customer must message this number again before you can reply.',
             ]);
         }
 
@@ -91,68 +125,13 @@ class CloudConversationController extends Controller
         return back()->with('status', 'Reply queued for delivery.');
     }
 
-    public function sendTemplate(
-        Request $request,
-        WhatsappSession $session,
-        WhatsappConversation $conversation,
-        MessageSender $sender,
-        AuditLogger $audit,
-    ): RedirectResponse {
-        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
-        $this->assertConversationBelongsToSession($conversation, $session);
-        $data = $request->validate([
-            'template_id' => ['required', 'string', 'regex:/^\d+$/'],
-            'parameters' => ['nullable', 'array'],
-            'parameters.*' => ['nullable', 'string', 'max:4096'],
-        ]);
-        $template = $this->approvedTemplate($session, $data['template_id']);
-        $components = CloudTemplateController::sendComponents($template, $data['parameters'] ?? []);
-
-        $result = $sender->send($workspace, $session, array_filter([
-            'type' => 'template',
-            'to' => $conversation->customer_wa_id,
-            'name' => $template->name,
-            'language' => $template->language,
-            'components' => $components,
-        ], fn ($value) => $value !== []));
-
-        $audit->log(
-            $result->failed() ? 'cloud_template.send_failed' : 'cloud_template.sent',
-            $workspace,
-            $request->user(),
-            auditable: $result->message,
-            metadata: ['conversation_id' => $conversation->id, 'meta_template_id' => $template->meta_template_id],
-            request: $request,
-        );
-
-        if ($result->failed()) {
-            return back()->withInput()->with('error', $result->error);
-        }
-
-        return back()->with('status', 'Template message queued for delivery.');
-    }
-
     private function render(Request $request, WhatsappSession $session, ?WhatsappConversation $selected): View
     {
-        $conversations = $session->conversations()
-            ->withCount('messages')
-            ->latest('latest_message_at')
-            ->paginate(30);
+        $conversations = $this->conversationQuery($session)->paginate(30);
 
         $messages = $selected
-            ? $selected->messages()->oldest('created_at')->limit(200)->get()
+            ? $this->latestMessages($selected)
             : collect();
-
-        try {
-            $approvedTemplates = $this->metaTemplates->all($session)
-                ->where('status', 'APPROVED')
-                ->where('is_active', true)
-                ->values();
-            $templateLoadError = null;
-        } catch (ValidationException $exception) {
-            $approvedTemplates = collect();
-            $templateLoadError = $exception->errors()['meta'][0] ?? $exception->getMessage();
-        }
 
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
@@ -161,8 +140,6 @@ class CloudConversationController extends Controller
             'conversations' => $conversations,
             'selectedConversation' => $selected,
             'conversationMessages' => $messages,
-            'approvedTemplates' => $approvedTemplates,
-            'templateLoadError' => $templateLoadError,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
         ]);
@@ -187,11 +164,47 @@ class CloudConversationController extends Controller
         );
     }
 
-    private function approvedTemplate(WhatsappSession $session, string $templateId): MetaWhatsappTemplate
+    private function conversationQuery(WhatsappSession $session)
     {
-        $template = $this->metaTemplates->find($session, $templateId);
-        abort_unless($template->status === 'APPROVED' && $template->is_active, 404);
+        return $session->conversations()
+            ->withCount('messages')
+            ->orderByDesc('latest_message_at')
+            ->orderByDesc('id');
+    }
 
-        return $template;
+    private function latestMessages(WhatsappConversation $conversation)
+    {
+        return $conversation->messages()
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get()
+            ->reverse()
+            ->values();
+    }
+
+    private function conversationData(WhatsappSession $session, WhatsappConversation $conversation): array
+    {
+        return [
+            'id' => $conversation->id,
+            'customer_name' => $conversation->customer_name ?: 'WhatsApp customer',
+            'customer_wa_id' => '+'.ltrim($conversation->customer_wa_id, '+'),
+            'messages_count' => $conversation->messages_count,
+            'latest_message_label' => $conversation->latest_message_at?->format('M j, H:i') ?: 'No activity',
+            'service_window_open' => $conversation->serviceWindowIsOpen(),
+            'show_url' => route('dashboard.sessions.conversations.show', [$session, $conversation]),
+        ];
+    }
+
+    private function selectedConversationData(WhatsappSession $session, WhatsappConversation $conversation): array
+    {
+        return [
+            'id' => $conversation->id,
+            'customer_name' => $conversation->customer_name ?: 'WhatsApp customer',
+            'customer_wa_id' => '+'.ltrim($conversation->customer_wa_id, '+'),
+            'service_window_open' => $conversation->serviceWindowIsOpen(),
+            'service_window_expires_label' => $conversation->service_window_expires_at?->format('M j, Y H:i T'),
+            'reply_url' => route('dashboard.sessions.conversations.messages.text', [$session, $conversation]),
+        ];
     }
 }

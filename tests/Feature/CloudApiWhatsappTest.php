@@ -84,23 +84,23 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertArrayNotHasKey('verify_token', $cloud->cloudConfig->toArray());
     }
 
-    public function test_official_session_dashboard_does_not_poll_or_auto_refresh(): void
+    public function test_official_session_dashboard_uses_local_inbox_snapshots_without_meta_requests(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         $admin = User::factory()->create();
         $workspace->users()->attach($admin, ['role' => 'workspace_admin']);
         $cloud = $this->cloudSession($workspace);
-        Http::fake(['*/waba-1/message_templates*' => Http::response(['data' => []])]);
+        Http::fake();
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->get(route('dashboard.sessions.show', $cloud))
             ->assertOk()
+            ->assertSee('data-cloud-inbox-snapshot-url', false)
             ->assertDontSee('data-session-live-url', false)
             ->assertDontSee('data-auto-refresh-ms', false);
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn ($request) => str_contains($request->url(), '/waba-1/message_templates'));
+        Http::assertNothingSent();
     }
 
     public function test_cloud_transport_sends_text_templates_reactions_and_media_links(): void

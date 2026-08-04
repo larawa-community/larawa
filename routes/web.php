@@ -114,10 +114,10 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::delete('/sessions/{session}', [SessionController::class, 'destroy'])->name('.sessions.destroy');
 
         Route::get('/sessions/{session}/conversations', [CloudConversationController::class, 'index'])->name('.sessions.conversations.index');
+        Route::get('/sessions/{session}/conversations/snapshot', [CloudConversationController::class, 'snapshot'])->name('.sessions.conversations.snapshot');
         Route::get('/sessions/{session}/conversations/{conversation}', [CloudConversationController::class, 'show'])->name('.sessions.conversations.show');
         Route::get('/sessions/{session}/cloud-settings', [CloudConversationController::class, 'settings'])->name('.sessions.cloud-settings');
         Route::post('/sessions/{session}/conversations/{conversation}/messages/text', [CloudConversationController::class, 'reply'])->name('.sessions.conversations.messages.text');
-        Route::post('/sessions/{session}/conversations/{conversation}/messages/template', [CloudConversationController::class, 'sendTemplate'])->name('.sessions.conversations.messages.template');
         Route::get('/sessions/{session}/templates', [CloudTemplateController::class, 'index'])->name('.sessions.templates.index');
         Route::get('/sessions/{session}/templates/create', [CloudTemplateController::class, 'create'])->name('.sessions.templates.create');
         Route::post('/sessions/{session}/templates', [CloudTemplateController::class, 'store'])->name('.sessions.templates.store');

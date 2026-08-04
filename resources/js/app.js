@@ -457,6 +457,256 @@ if (liveSession) {
     window.setInterval(pollLiveSession, 8000);
 }
 
+const cloudInbox = document.querySelector('[data-cloud-inbox]');
+
+if (cloudInbox) {
+    const baseDelay = 5000;
+    const maximumDelay = 30000;
+    const selectedId = cloudInbox.dataset.cloudInboxSelectedId || '';
+    const conversationList = cloudInbox.querySelector('[data-cloud-inbox-conversations]');
+    const messageList = cloudInbox.querySelector('[data-cloud-inbox-messages]');
+    const total = cloudInbox.querySelector('[data-cloud-inbox-total]');
+    const liveStatus = cloudInbox.querySelector('[data-cloud-inbox-live-status]');
+    const liveDot = cloudInbox.querySelector('[data-cloud-inbox-live-dot]');
+    const liveLabel = cloudInbox.querySelector('[data-cloud-inbox-live-label]');
+    let timer = null;
+    let inFlight = false;
+    let failures = 0;
+    let conversationSignature = null;
+    let messageSignature = null;
+
+    function setLiveStatus(state) {
+        const reconnecting = state === 'reconnecting';
+        liveStatus?.classList.toggle('bg-emerald-50', !reconnecting);
+        liveStatus?.classList.toggle('text-emerald-700', !reconnecting);
+        liveStatus?.classList.toggle('bg-amber-50', reconnecting);
+        liveStatus?.classList.toggle('text-amber-800', reconnecting);
+        liveDot?.classList.toggle('bg-emerald-500', !reconnecting);
+        liveDot?.classList.toggle('bg-amber-500', reconnecting);
+        if (liveLabel) liveLabel.textContent = reconnecting ? 'Reconnecting…' : 'Live updates';
+    }
+
+    function renderConversation(conversation) {
+        const link = document.createElement('a');
+        const isSelected = String(conversation.id) === selectedId;
+        link.href = conversation.show_url;
+        link.className = `block border-l-4 px-4 py-4 transition ${isSelected ? 'border-[#128c42] bg-white shadow-sm' : 'border-transparent hover:bg-white'}`;
+
+        const header = document.createElement('div');
+        header.className = 'flex items-start justify-between gap-3';
+
+        const customer = document.createElement('div');
+        customer.className = 'min-w-0';
+        const name = document.createElement('div');
+        name.className = 'truncate text-sm font-semibold text-slate-900';
+        name.textContent = conversation.customer_name;
+        const number = document.createElement('div');
+        number.className = 'mt-1 font-mono text-xs text-slate-500';
+        number.textContent = conversation.customer_wa_id;
+        customer.append(name, number);
+
+        const windowState = document.createElement('span');
+        windowState.className = `shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase ${conversation.service_window_open ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`;
+        windowState.textContent = conversation.service_window_open ? 'Open' : 'Closed';
+        header.append(customer, windowState);
+
+        const meta = document.createElement('div');
+        meta.className = 'mt-3 flex items-center justify-between text-xs text-slate-500';
+        const count = document.createElement('span');
+        count.textContent = `${conversation.messages_count} messages`;
+        const latest = document.createElement('span');
+        latest.textContent = conversation.latest_message_label;
+        meta.append(count, latest);
+        link.append(header, meta);
+
+        return link;
+    }
+
+    function updateConversations(conversations, pagination) {
+        if (total) total.textContent = pagination?.total ?? conversations.length;
+        if (!conversationList) return;
+        const nextSignature = JSON.stringify([conversations, pagination]);
+        if (conversationSignature === nextSignature) return;
+        conversationSignature = nextSignature;
+
+        const scrollTop = conversationList.scrollTop;
+        conversationList.replaceChildren();
+        if (conversations.length > 0) {
+            conversations.forEach((conversation) => conversationList.append(renderConversation(conversation)));
+            conversationList.scrollTop = scrollTop;
+            return;
+        }
+
+        const empty = document.createElement('div');
+        empty.className = 'px-5 py-16 text-center';
+        const icon = document.createElement('div');
+        icon.className = 'mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-lg text-[#128c42]';
+        icon.textContent = '✦';
+        const title = document.createElement('h4');
+        title.className = 'mt-4 text-sm font-semibold text-slate-900';
+        title.textContent = 'No customer enquiries yet';
+        const description = document.createElement('p');
+        description.className = 'mt-2 text-xs leading-5 text-slate-500';
+        description.textContent = 'Signed Meta webhooks will create conversations here when customers message this number.';
+        empty.append(icon, title, description);
+        conversationList.append(empty);
+    }
+
+    function renderConversationMessage(message) {
+        const wrapper = document.createElement('div');
+        const outgoing = message.direction === 'outgoing';
+        wrapper.className = `flex ${outgoing ? 'justify-end' : 'justify-start'}`;
+
+        const article = document.createElement('article');
+        article.className = `max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] ${outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900'}`;
+        const body = document.createElement('div');
+        body.className = 'whitespace-pre-wrap break-words text-sm leading-6';
+        body.textContent = message.body;
+        article.append(body);
+
+        if (message.media_url) {
+            const media = document.createElement('a');
+            media.href = message.media_url;
+            media.className = 'mt-2 inline-flex text-xs font-semibold text-[#128c42]';
+            media.textContent = 'Download attachment';
+            article.append(media);
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-500';
+        const createdAt = document.createElement('span');
+        createdAt.textContent = message.created_at_label || '';
+        meta.append(createdAt);
+        if (outgoing) {
+            const status = document.createElement('span');
+            status.className = 'font-semibold uppercase';
+            status.textContent = message.status || '';
+            meta.append(status);
+        }
+        article.append(meta);
+        wrapper.append(article);
+
+        return wrapper;
+    }
+
+    function updateConversationMessages(messages) {
+        if (!messageList) return;
+        const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.body, message.media_url]));
+        if (messageSignature === nextSignature) return;
+
+        const stayAtBottom = messageSignature === null || messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 96;
+        messageSignature = nextSignature;
+        messageList.replaceChildren();
+
+        if (messages.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'py-20 text-center text-sm text-slate-500';
+            empty.textContent = 'No messages are stored for this conversation yet.';
+            messageList.append(empty);
+        } else {
+            messages.forEach((message) => messageList.append(renderConversationMessage(message)));
+        }
+
+        if (stayAtBottom) {
+            window.requestAnimationFrame(() => {
+                messageList.scrollTop = messageList.scrollHeight;
+            });
+        }
+    }
+
+    function updateSelectedConversation(conversation) {
+        if (!conversation) return;
+        const name = cloudInbox.querySelector('[data-cloud-inbox-customer-name]');
+        const number = cloudInbox.querySelector('[data-cloud-inbox-customer-number]');
+        const serviceWindow = cloudInbox.querySelector('[data-cloud-inbox-window]');
+        const windowTitle = cloudInbox.querySelector('[data-cloud-inbox-window-title]');
+        const windowDetail = cloudInbox.querySelector('[data-cloud-inbox-window-detail]');
+        const replyForm = cloudInbox.querySelector('[data-cloud-inbox-reply-form]');
+        const replyClosed = cloudInbox.querySelector('[data-cloud-inbox-reply-closed]');
+        const isOpen = conversation.service_window_open;
+
+        if (name) name.textContent = conversation.customer_name;
+        if (number) number.textContent = conversation.customer_wa_id;
+        serviceWindow?.classList.toggle('border-emerald-200', isOpen);
+        serviceWindow?.classList.toggle('bg-emerald-50', isOpen);
+        serviceWindow?.classList.toggle('border-amber-200', !isOpen);
+        serviceWindow?.classList.toggle('bg-amber-50', !isOpen);
+        windowTitle?.classList.toggle('text-emerald-700', isOpen);
+        windowTitle?.classList.toggle('text-amber-800', !isOpen);
+        if (windowTitle) windowTitle.textContent = `24-hour service window ${isOpen ? 'open' : 'closed'}`;
+        if (windowDetail) {
+            windowDetail.textContent = isOpen
+                ? `Free-form replies until ${conversation.service_window_expires_label}`
+                : 'Replies are paused until the customer messages this number again.';
+        }
+        if (replyForm) {
+            replyForm.action = conversation.reply_url;
+            replyForm.classList.toggle('hidden', !isOpen);
+            replyForm.classList.toggle('flex', isOpen);
+        }
+        replyClosed?.classList.toggle('hidden', isOpen);
+    }
+
+    function schedule(delay) {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(poll, delay);
+    }
+
+    async function poll() {
+        if (inFlight) return;
+        if (document.visibilityState !== 'visible') {
+            schedule(baseDelay);
+            return;
+        }
+
+        inFlight = true;
+        try {
+            const response = await fetch(cloudInbox.dataset.cloudInboxSnapshotUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (!response.ok) throw new Error(`Inbox snapshot failed with HTTP ${response.status}.`);
+
+            const snapshot = await response.json();
+            if (!selectedId && snapshot.conversations?.length > 0) {
+                window.location.assign(snapshot.conversations[0].show_url);
+                return;
+            }
+
+            updateConversations(snapshot.conversations || [], snapshot.pagination);
+            updateSelectedConversation(snapshot.selected);
+            updateConversationMessages(snapshot.messages || []);
+            failures = 0;
+            setLiveStatus('live');
+            schedule(baseDelay);
+        } catch (error) {
+            failures += 1;
+            setLiveStatus('reconnecting');
+            schedule(Math.min(baseDelay * (2 ** failures), maximumDelay));
+        } finally {
+            inFlight = false;
+        }
+    }
+
+    function refreshWhenVisible() {
+        if (document.visibilityState !== 'visible' || inFlight) return;
+        window.clearTimeout(timer);
+        poll();
+    }
+
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+    if (messageList) {
+        window.requestAnimationFrame(() => {
+            messageList.scrollTop = messageList.scrollHeight;
+        });
+    }
+    schedule(baseDelay);
+}
+
 const setupWizard = document.querySelector('[data-setup-wizard]');
 
 if (setupWizard) {
