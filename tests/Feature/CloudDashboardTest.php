@@ -198,6 +198,158 @@ class CloudDashboardTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_cloud_settings_show_whatsapp_account_management_only_to_admins(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.cloud-settings', $session))
+            ->assertOk()
+            ->assertSee('WhatsApp account')
+            ->assertSee('Set two-step verification PIN')
+            ->assertSee('Request a new display name')
+            ->assertSee('Apply approved name');
+
+        $user = User::factory()->create();
+        $workspace->users()->attach($user, ['role' => 'workspace_user']);
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.cloud-settings', $session))
+            ->assertOk()
+            ->assertDontSee('Set two-step verification PIN')
+            ->assertDontSee('Request a new display name');
+    }
+
+    public function test_admin_can_set_cloud_account_two_factor_pin_without_storing_it(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard' => Http::response(['success' => true]),
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.two-factor', $session), [
+                'pin' => '123456',
+                'pin_confirmation' => '123456',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'WhatsApp two-step verification PIN updated.');
+
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard'
+            && $request['pin'] === '123456');
+        $this->assertTrue((bool) data_get($session->fresh()->metadata, 'cloud_api.account.is_pin_enabled'));
+        $this->assertStringNotContainsString('123456', json_encode($session->fresh()->metadata));
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'cloud_account.two_factor_pin_updated',
+            'auditable_id' => $session->id,
+        ]);
+    }
+
+    public function test_cloud_account_pin_validation_and_admin_authorization_happen_before_meta_request(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake();
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.two-factor', $session), [
+                'pin' => '12345',
+                'pin_confirmation' => '12345',
+            ])
+            ->assertSessionHasErrors('pin');
+
+        $user = User::factory()->create();
+        $workspace->users()->attach($user, ['role' => 'workspace_user']);
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.two-factor', $session), [
+                'pin' => '123456',
+                'pin_confirmation' => '123456',
+            ])
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_admin_can_request_refresh_and_apply_an_approved_display_name(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake(fn ($request) => match (true) {
+            $request->method() === 'GET' => Http::response([
+                'display_phone_number' => '+81 90 1234 5678',
+                'verified_name' => 'Acme Support',
+                'name_status' => 'APPROVED',
+                'new_display_name' => 'Acme Concierge',
+                'new_name_status' => 'APPROVED',
+                'is_pin_enabled' => true,
+            ]),
+            str_ends_with($request->url(), '/register') => Http::response(['success' => true]),
+            default => Http::response(['success' => true]),
+        });
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.display-name.request', $session), [
+                'new_display_name' => 'Acme Concierge',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'The new display name was submitted to Meta for approval.');
+
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard'
+            && $request['new_display_name'] === 'Acme Concierge');
+        $this->assertSame('PENDING_REVIEW', data_get($session->fresh()->metadata, 'cloud_api.account.new_name_status'));
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.refresh', $session))
+            ->assertSessionHas('status', 'WhatsApp account status refreshed from Meta.');
+
+        $this->assertSame('APPROVED', data_get($session->fresh()->metadata, 'cloud_api.account.new_name_status'));
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.display-name.apply', $session), [
+                'display_name_pin' => '654321',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'The approved display name was applied to the WhatsApp phone number.');
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/phone-dashboard/register')
+            && $request['messaging_product'] === 'whatsapp'
+            && $request['pin'] === '654321');
+        $account = data_get($session->fresh()->metadata, 'cloud_api.account');
+        $this->assertSame('Acme Concierge', $account['verified_name']);
+        $this->assertNull($account['new_display_name']);
+        $this->assertNull($account['new_name_status']);
+        $this->assertStringNotContainsString('654321', json_encode($session->fresh()->metadata));
+        $this->assertDatabaseHas('audit_logs', ['action' => 'cloud_account.display_name_requested', 'auditable_id' => $session->id]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'cloud_account.display_name_applied', 'auditable_id' => $session->id]);
+    }
+
+    public function test_display_name_cannot_be_applied_before_meta_approval(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-dashboard*' => Http::response([
+                'new_display_name' => 'Acme Concierge',
+                'new_name_status' => 'PENDING_REVIEW',
+            ]),
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.cloud-account.display-name.apply', $session), [
+                'display_name_pin' => '654321',
+            ])
+            ->assertSessionHasErrors('display_name_pin');
+
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/register'));
+    }
+
     public function test_closed_window_disables_free_text_and_rejects_direct_reply(): void
     {
         [$workspace, $session, $user] = $this->cloudSession('workspace_user');

@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Dashboard\AccountSecurityController;
 use App\Http\Controllers\Dashboard\ApiKeyController;
+use App\Http\Controllers\Dashboard\CloudAccountController;
 use App\Http\Controllers\Dashboard\CloudConversationController;
 use App\Http\Controllers\Dashboard\CloudTemplateController;
 use App\Http\Controllers\Dashboard\DashboardController;
@@ -117,6 +118,10 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::get('/sessions/{session}/conversations/snapshot', [CloudConversationController::class, 'snapshot'])->name('.sessions.conversations.snapshot');
         Route::get('/sessions/{session}/conversations/{conversation}', [CloudConversationController::class, 'show'])->name('.sessions.conversations.show');
         Route::get('/sessions/{session}/cloud-settings', [CloudConversationController::class, 'settings'])->name('.sessions.cloud-settings');
+        Route::post('/sessions/{session}/cloud-account/refresh', [CloudAccountController::class, 'refresh'])->name('.sessions.cloud-account.refresh');
+        Route::post('/sessions/{session}/cloud-account/two-factor', [CloudAccountController::class, 'setTwoFactor'])->name('.sessions.cloud-account.two-factor');
+        Route::post('/sessions/{session}/cloud-account/display-name/request', [CloudAccountController::class, 'requestDisplayName'])->name('.sessions.cloud-account.display-name.request');
+        Route::post('/sessions/{session}/cloud-account/display-name/apply', [CloudAccountController::class, 'applyDisplayName'])->name('.sessions.cloud-account.display-name.apply');
         Route::post('/sessions/{session}/conversations/{conversation}/messages/text', [CloudConversationController::class, 'reply'])->name('.sessions.conversations.messages.text');
         Route::get('/sessions/{session}/templates', [CloudTemplateController::class, 'index'])->name('.sessions.templates.index');
         Route::get('/sessions/{session}/templates/create', [CloudTemplateController::class, 'create'])->name('.sessions.templates.create');
