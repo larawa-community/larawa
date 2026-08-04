@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\AuditLogger;
 use App\Support\WorkspaceIds;
@@ -64,13 +65,16 @@ class WorkspaceController extends Controller
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'session_types' => ['required', 'array', 'min:1'],
+            'session_types.*' => ['required', 'distinct', Rule::in([WhatsappSession::TYPE_CLOUD, WhatsappSession::TYPE_WRAPPER])],
         ]);
 
         $workspace = Workspace::create([
             'name' => $data['name'],
             'slug' => WorkspaceIds::generate($data['name']),
+            ...$this->sessionTypeAttributes($data['session_types']),
         ]);
-        $audit->log('workspace.created', $workspace, $request->user(), auditable: $workspace, request: $request);
+        $audit->log('workspace.created', $workspace, $request->user(), auditable: $workspace, metadata: ['session_types' => $workspace->allowedSessionTypes()], request: $request);
 
         return back()->with('status', 'Workspace created.');
     }
@@ -81,10 +85,18 @@ class WorkspaceController extends Controller
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
+            'session_types' => ['required', 'array', 'min:1'],
+            'session_types.*' => ['required', 'distinct', Rule::in([WhatsappSession::TYPE_CLOUD, WhatsappSession::TYPE_WRAPPER])],
         ]);
 
-        $workspace->update(['name' => $data['name']]);
-        $audit->log('workspace.updated', $workspace, $request->user(), auditable: $workspace, metadata: ['fields' => ['name']], request: $request);
+        $workspace->update([
+            'name' => $data['name'],
+            ...$this->sessionTypeAttributes($data['session_types']),
+        ]);
+        $audit->log('workspace.updated', $workspace, $request->user(), auditable: $workspace, metadata: [
+            'fields' => ['name', 'session_types'],
+            'session_types' => $workspace->allowedSessionTypes(),
+        ], request: $request);
 
         return back()->with('status', 'Workspace updated.');
     }
@@ -141,5 +153,13 @@ class WorkspaceController extends Controller
         $workspace->delete();
 
         return redirect()->route('dashboard.workspaces.index')->with('status', 'Workspace deleted.');
+    }
+
+    private function sessionTypeAttributes(array $types): array
+    {
+        return [
+            'allows_official_cloud_api' => in_array(WhatsappSession::TYPE_CLOUD, $types, true),
+            'allows_whatsapp_wrapper' => in_array(WhatsappSession::TYPE_WRAPPER, $types, true),
+        ];
     }
 }

@@ -15,7 +15,7 @@ class MetaWhatsappWebhookController extends Controller
 {
     public function verify(Request $request, WhatsappSession $session): Response
     {
-        abort_unless($session->isCloudApi() && $session->cloudConfig, 404);
+        abort_unless($session->isCloudApi() && $session->cloudConfig && $session->workspace?->allowsSessionType($session->type), 404);
         $token = (string) $session->cloudConfig->verify_token;
         $provided = (string) $request->query('hub_verify_token', $request->query('hub.verify_token', ''));
         $mode = (string) $request->query('hub_mode', $request->query('hub.mode', ''));
@@ -30,7 +30,7 @@ class MetaWhatsappWebhookController extends Controller
 
     public function receive(Request $request, WhatsappSession $session): JsonResponse
     {
-        abort_unless($session->isCloudApi() && $session->cloudConfig, 404);
+        abort_unless($session->isCloudApi() && $session->cloudConfig && $session->workspace?->allowsSessionType($session->type), 404);
         $raw = $request->getContent();
         if (strlen($raw) > 3 * 1024 * 1024) {
             return response()->json(['message' => 'WhatsApp webhook payload exceeds Meta\'s 3 MB limit.'], 413);

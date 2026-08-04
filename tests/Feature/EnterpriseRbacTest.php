@@ -41,6 +41,7 @@ class EnterpriseRbacTest extends TestCase
             ->from(route('dashboard.workspaces.index'))
             ->post(route('dashboard.workspaces.store'), [
                 'name' => 'Support',
+                'session_types' => ['official_cloud_api'],
             ])
             ->assertRedirect(route('dashboard.workspaces.index'));
 

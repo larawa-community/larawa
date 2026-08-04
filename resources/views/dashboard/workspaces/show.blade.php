@@ -32,6 +32,21 @@
             <form method="POST" action="{{ route('dashboard.workspaces.update', $managedWorkspace) }}" class="mt-6 grid gap-4 rounded-md bg-slate-50 p-4">
                 @csrf @method('PATCH')
                 <label class="block"><span class="mb-1 block text-sm font-medium">Name</span><input name="name" value="{{ old('name', $managedWorkspace->name) }}" required class="w-full rounded-md border border-slate-300 px-3 py-2"></label>
+                <fieldset class="rounded-md border border-slate-200 bg-white p-4">
+                    <legend class="px-1 text-sm font-semibold text-slate-700">Allowed session types</legend>
+                    @php $selectedSessionTypes = old('session_types', $managedWorkspace->allowedSessionTypes()); @endphp
+                    <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                        <label class="flex items-start gap-3 rounded-md border border-slate-200 p-3">
+                            <input type="checkbox" name="session_types[]" value="official_cloud_api" @checked(in_array('official_cloud_api', $selectedSessionTypes, true)) class="mt-0.5 rounded border-slate-300 text-[#128c42] focus:ring-[#25d366]">
+                            <span><span class="block text-sm font-medium">Official Cloud API</span><span class="mt-1 block text-xs text-slate-500">Conversations, templates, and Meta account settings.</span></span>
+                        </label>
+                        <label class="flex items-start gap-3 rounded-md border border-slate-200 p-3">
+                            <input type="checkbox" name="session_types[]" value="whatsapp_wrapper" @checked(in_array('whatsapp_wrapper', $selectedSessionTypes, true)) class="mt-0.5 rounded border-slate-300 text-[#128c42] focus:ring-[#25d366]">
+                            <span><span class="block text-sm font-medium">WhatsApp Wrapper</span><span class="mt-1 block text-xs text-slate-500">QR sessions, discovery, and worker lifecycle controls.</span></span>
+                        </label>
+                    </div>
+                    <p class="mt-3 text-xs text-slate-500">Disabled session data is preserved but unavailable until the type is enabled again.</p>
+                </fieldset>
                 <div><button class="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Save Changes</button></div>
             </form>
 

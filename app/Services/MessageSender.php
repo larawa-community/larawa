@@ -27,6 +27,12 @@ class MessageSender
 
     public function send(Workspace $workspace, WhatsappSession $session, array $payload): MessageSendResult
     {
+        if ($session->workspace_id !== $workspace->id || ! $workspace->allowsSessionType($session->type)) {
+            throw ValidationException::withMessages([
+                'session' => 'This session type is not enabled for the workspace.',
+            ]);
+        }
+
         $payload = $session->isWrapper() ? $this->normalizePayloadRecipient($payload) : $payload;
         $idempotencyKey = $payload['idempotency_key'] ?? null;
         $fingerprint = $idempotencyKey ? $this->fingerprintPayload($payload) : null;
@@ -254,7 +260,11 @@ class MessageSender
 
     private function shouldTryCloudFallback(WhatsappSession $session, ConnectionException|RequestException $exception): bool
     {
-        if (! $session->isWrapper() || ! $session->fallback_session_id) {
+        $workspace = $session->workspace;
+        if (! $session->isWrapper()
+            || ! $session->fallback_session_id
+            || ! $workspace?->allowsSessionType(WhatsappSession::TYPE_WRAPPER)
+            || ! $workspace?->allowsSessionType(WhatsappSession::TYPE_CLOUD)) {
             return false;
         }
 
@@ -270,7 +280,12 @@ class MessageSender
     private function tryCloudFallback(Workspace $workspace, WhatsappSession $session, Message $message, array $payload, array $storedPayload, string $failureReason): ?Message
     {
         $target = $session->fallbackSession()->with('cloudConfig')->first();
-        if (! $target || $target->workspace_id !== $workspace->id || ! $target->isCloudApi() || $target->status !== 'ready') {
+        if (! $workspace->allowsSessionType(WhatsappSession::TYPE_WRAPPER)
+            || ! $workspace->allowsSessionType(WhatsappSession::TYPE_CLOUD)
+            || ! $target
+            || $target->workspace_id !== $workspace->id
+            || ! $target->isCloudApi()
+            || $target->status !== 'ready') {
             return null;
         }
 

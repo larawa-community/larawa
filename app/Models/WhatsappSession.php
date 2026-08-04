@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,7 +23,7 @@ class WhatsappSession extends Model
 
     protected $appends = ['fallback_session_uuid'];
 
-    protected $hidden = ['fallback_session_id'];
+    protected $hidden = ['fallback_session_id', 'workspace'];
 
     protected $attributes = ['type' => self::TYPE_WRAPPER];
 
@@ -83,6 +84,10 @@ class WhatsappSession extends Model
 
     public function getFallbackSessionUuidAttribute(): ?string
     {
+        if (! $this->workspace?->allowsSessionType(self::TYPE_CLOUD)) {
+            return null;
+        }
+
         return $this->fallbackSession?->uuid;
     }
 
@@ -94,6 +99,19 @@ class WhatsappSession extends Model
     public function isWrapper(): bool
     {
         return ! $this->isCloudApi();
+    }
+
+    public function scopeAllowedByWorkspace(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->where(function (Builder $query): void {
+                $query->where('type', self::TYPE_WRAPPER)
+                    ->whereHas('workspace', fn (Builder $workspace) => $workspace->where('allows_whatsapp_wrapper', true));
+            })->orWhere(function (Builder $query): void {
+                $query->where('type', self::TYPE_CLOUD)
+                    ->whereHas('workspace', fn (Builder $workspace) => $workspace->where('allows_official_cloud_api', true));
+            });
+        });
     }
 
     public function maskedPhoneNumber(): string

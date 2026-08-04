@@ -22,7 +22,7 @@ class WhatsappSessionQuery
 
     public function forWorkspace(Workspace $workspace, array $filters = []): HasMany
     {
-        $query = $workspace->whatsappSessions()->latest();
+        $query = $workspace->whatsappSessions()->whereIn('type', $workspace->allowedSessionTypes())->latest();
 
         $this->applyFilters($query, $filters);
 
@@ -31,7 +31,7 @@ class WhatsappSessionQuery
 
     public function all(array $filters = []): Builder
     {
-        $query = WhatsappSession::query()->with('workspace')->latest();
+        $query = WhatsappSession::query()->allowedByWorkspace()->with('workspace')->latest();
 
         $this->applyFilters($query, $filters);
 
@@ -40,7 +40,9 @@ class WhatsappSessionQuery
 
     public function statusCounts(?Workspace $workspace = null): array
     {
-        $query = $workspace?->whatsappSessions() ?: WhatsappSession::query();
+        $query = $workspace
+            ? $workspace->whatsappSessions()->whereIn('type', $workspace->allowedSessionTypes())
+            : WhatsappSession::query()->allowedByWorkspace();
 
         return $query
             ->selectRaw('status, count(*) as aggregate')

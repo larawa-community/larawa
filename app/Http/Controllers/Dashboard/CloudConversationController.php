@@ -82,8 +82,12 @@ class CloudConversationController extends Controller
                     'created_at_label' => $message->created_at?->format('M j, H:i'),
                     'mime_type' => $message->mime_type,
                     'filename' => data_get($message->payload, 'filename'),
+                    'is_voice' => (bool) data_get($message->payload, 'meta_webhook.audio.voice', false),
                     'media_url' => $message->media_path
-                        ? route('dashboard.messages.media', array_filter(['message' => $message, 'preview' => $message->type === 'image' ? 1 : null]))
+                        ? route('dashboard.messages.media', array_filter([
+                            'message' => $message,
+                            'preview' => in_array($message->type, ['image', 'sticker', 'audio'], true) ? 1 : null,
+                        ]))
                         : null,
                     'download_url' => $message->media_path ? route('dashboard.messages.media', $message) : null,
                 ])->values()
@@ -234,7 +238,7 @@ class CloudConversationController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, $ability, $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         abort_unless($session->isCloudApi(), 404);
 
         return $workspace;

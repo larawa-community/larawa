@@ -14,6 +14,8 @@ class MessageMediaController extends Controller
     {
         $workspace = $this->workspace($request);
         abort_unless($message->workspace_id === $workspace->id, 404);
+        abort_unless($message->whatsappSession && $workspace->allowsSessionType($message->whatsappSession->type), 404);
+        abort_unless(! $message->transport_session_id || ($message->transportSession && $workspace->allowsSessionType($message->transportSession->type)), 404);
 
         $response = $this->download($message);
         $audit->log('api.message.media_downloaded', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $message, request: $request);
@@ -27,8 +29,12 @@ class MessageMediaController extends Controller
         $this->authorizeWorkspace($request, 'messages.view', $message->workspace);
         abort_unless($this->isSiteAdmin($request) || $message->workspace_id === $workspace->id, 404);
         $workspace = $message->workspace;
+        abort_unless($message->whatsappSession && $workspace->allowsSessionType($message->whatsappSession->type), 404);
+        abort_unless(! $message->transport_session_id || ($message->transportSession && $workspace->allowsSessionType($message->transportSession->type)), 404);
 
-        $response = $request->boolean('preview') && str_starts_with((string) $message->mime_type, 'image/')
+        $isInlineMedia = str_starts_with((string) $message->mime_type, 'image/')
+            || str_starts_with((string) $message->mime_type, 'audio/');
+        $response = $request->boolean('preview') && $isInlineMedia
             ? $this->preview($message)
             : $this->download($message);
         $audit->log('message.media_downloaded', $workspace, $request->user(), auditable: $message, request: $request);

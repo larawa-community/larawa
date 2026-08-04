@@ -14,6 +14,7 @@ use App\Services\Messaging\CloudApiWhatsappTransport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CloudApiWhatsappTest extends TestCase
@@ -257,6 +258,110 @@ class CloudApiWhatsappTest extends TestCase
             'body' => 'Hello from Meta',
         ]);
         $this->assertSame('processed', MetaWebhookReceipt::firstOrFail()->status);
+    }
+
+    public function test_meta_webhook_downloads_and_serves_incoming_images_documents_and_voice_messages(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local']);
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $admin = User::factory()->create();
+        $workspace->users()->attach($admin, ['role' => 'workspace_admin']);
+        $cloud = $this->cloudSession($workspace);
+        Http::fake([
+            'https://graph.facebook.com/v25.0/media-image' => Http::response([
+                'url' => 'https://media.example.test/customer-image',
+                'mime_type' => 'image/jpeg',
+            ]),
+            'https://graph.facebook.com/v25.0/media-document' => Http::response([
+                'url' => 'https://media.example.test/customer-document',
+                'mime_type' => 'application/pdf',
+            ]),
+            'https://graph.facebook.com/v25.0/media-voice' => Http::response([
+                'url' => 'https://media.example.test/customer-voice',
+                'mime_type' => 'audio/ogg; codecs=opus',
+            ]),
+            'https://media.example.test/customer-image' => Http::response('stored image bytes', 200, ['Content-Type' => 'image/jpeg']),
+            'https://media.example.test/customer-document' => Http::response('stored pdf bytes', 200, ['Content-Type' => 'application/pdf']),
+            'https://media.example.test/customer-voice' => Http::response('stored voice bytes', 200, ['Content-Type' => 'audio/ogg; codecs=opus']),
+        ]);
+
+        $payload = [
+            'object' => 'whatsapp_business_account',
+            'entry' => [[
+                'changes' => [[
+                    'field' => 'messages',
+                    'value' => [
+                        'metadata' => ['display_phone_number' => '15550001111', 'phone_number_id' => 'phone-1'],
+                        'contacts' => [['wa_id' => '15551234567', 'profile' => ['name' => 'Customer']]],
+                        'messages' => [
+                            [
+                                'from' => '15551234567',
+                                'id' => 'wamid.inbound-image',
+                                'timestamp' => '1785550000',
+                                'type' => 'image',
+                                'image' => ['id' => 'media-image', 'mime_type' => 'image/jpeg', 'caption' => 'Order photo'],
+                            ],
+                            [
+                                'from' => '15551234567',
+                                'id' => 'wamid.inbound-document',
+                                'timestamp' => '1785550001',
+                                'type' => 'document',
+                                'document' => ['id' => 'media-document', 'mime_type' => 'application/pdf', 'filename' => 'invoice.pdf'],
+                            ],
+                            [
+                                'from' => '15551234567',
+                                'id' => 'wamid.inbound-voice',
+                                'timestamp' => '1785550002',
+                                'type' => 'audio',
+                                'audio' => ['id' => 'media-voice', 'mime_type' => 'audio/ogg; codecs=opus', 'voice' => true],
+                            ],
+                        ],
+                    ],
+                ]],
+            ]],
+        ];
+        $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
+        ], $raw)->assertOk();
+
+        $image = Message::where('wa_message_id', 'wamid.inbound-image')->firstOrFail();
+        $document = Message::where('wa_message_id', 'wamid.inbound-document')->firstOrFail();
+        $voice = Message::where('wa_message_id', 'wamid.inbound-voice')->firstOrFail();
+        Storage::disk('local')->assertExists($image->media_path);
+        Storage::disk('local')->assertExists($document->media_path);
+        Storage::disk('local')->assertExists($voice->media_path);
+        $this->assertSame('image/jpeg', $image->mime_type);
+        $this->assertSame('invoice.pdf', $document->payload['filename']);
+        $this->assertSame('audio/ogg; codecs=opus', $voice->mime_type);
+        $this->assertTrue($voice->payload['meta_webhook']['audio']['voice']);
+
+        $conversation = $voice->conversation;
+        $snapshot = $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->getJson(route('dashboard.sessions.conversations.snapshot', ['session' => $cloud, 'selected' => $conversation->id]))
+            ->assertOk();
+        $messages = collect($snapshot->json('messages'))->keyBy('type');
+        $this->assertStringContainsString('preview=1', $messages['image']['media_url']);
+        $this->assertSame('invoice.pdf', $messages['document']['filename']);
+        $this->assertTrue($messages['audio']['is_voice']);
+        $this->assertStringContainsString('preview=1', $messages['audio']['media_url']);
+
+        $this->get(route('dashboard.sessions.conversations.show', [$cloud, $conversation]))
+            ->assertOk()
+            ->assertSee('data-cloud-inbox-media-image', false)
+            ->assertSee('data-cloud-inbox-media-audio', false)
+            ->assertSee('Voice message');
+
+        $this->get(route('dashboard.messages.media', ['message' => $image, 'preview' => 1]))
+            ->assertOk()
+            ->assertHeader('content-type', 'image/jpeg');
+        $this->get(route('dashboard.messages.media', ['message' => $voice, 'preview' => 1]))
+            ->assertOk()
+            ->assertHeader('content-type', 'audio/ogg; codecs=opus');
     }
 
     public function test_meta_webhook_rejects_bad_signature_and_acknowledges_unknown_phone_number(): void

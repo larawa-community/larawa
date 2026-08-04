@@ -30,7 +30,7 @@ class SessionDiscoveryController extends Controller
     private function workerCollection(Request $request, WhatsappSession $session, callable $fetch): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
 
         $data = $request->validate([
             'limit' => ['nullable', 'integer', 'min:1', 'max:500'],

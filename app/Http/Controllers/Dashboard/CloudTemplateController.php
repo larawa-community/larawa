@@ -320,7 +320,7 @@ class CloudTemplateController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, $ability, $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         abort_unless($session->isCloudApi(), 404);
 
         return $workspace;

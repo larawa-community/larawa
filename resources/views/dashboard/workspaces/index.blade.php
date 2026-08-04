@@ -66,6 +66,20 @@
             <form method="POST" action="{{ route('dashboard.workspaces.store') }}" class="mt-5 space-y-4">
                 @csrf
                 <label class="block"><span class="mb-1 block text-sm font-medium">Name</span><input name="name" value="{{ old('name') }}" required class="w-full rounded-md border border-slate-300 px-3 py-2"></label>
+                <fieldset class="rounded-md border border-slate-200 p-4">
+                    <legend class="px-1 text-sm font-semibold text-slate-700">Allowed session types</legend>
+                    <div class="mt-2 space-y-3 text-sm">
+                        <label class="flex items-start gap-3">
+                            <input type="checkbox" name="session_types[]" value="official_cloud_api" @checked(in_array('official_cloud_api', old('session_types', ['official_cloud_api']), true)) class="mt-0.5 rounded border-slate-300 text-[#128c42] focus:ring-[#25d366]">
+                            <span><span class="block font-medium">Official Cloud API</span><span class="mt-0.5 block text-xs text-slate-500">Meta-hosted WhatsApp Business Platform sessions.</span></span>
+                        </label>
+                        <label class="flex items-start gap-3">
+                            <input type="checkbox" name="session_types[]" value="whatsapp_wrapper" @checked(in_array('whatsapp_wrapper', old('session_types', []), true)) class="mt-0.5 rounded border-slate-300 text-[#128c42] focus:ring-[#25d366]">
+                            <span><span class="block font-medium">WhatsApp Wrapper</span><span class="mt-0.5 block text-xs text-slate-500">QR-linked sessions served by the local worker.</span></span>
+                        </label>
+                    </div>
+                    <p class="mt-3 text-xs text-slate-500">Select at least one session type.</p>
+                </fieldset>
                 <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
             </form>
         </section>

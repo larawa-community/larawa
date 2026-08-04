@@ -161,7 +161,7 @@ class MessageController extends Controller
     private function send(Request $request, WhatsappSession $session, MessageSender $sender, AuditLogger $audit, array $payload, bool $respond = true): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
 
         $result = $sender->send($workspace, $session, $payload);
         $audit->log(

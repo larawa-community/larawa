@@ -42,7 +42,7 @@ class ProcessMetaWhatsappWebhook implements ShouldQueue
                         ->with('whatsappSession.workspace')
                         ->first();
                     $session = $config?->whatsappSession;
-                    if (! $session) {
+                    if (! $session || ! $session->workspace?->allowsSessionType($session->type)) {
                         continue;
                     }
 

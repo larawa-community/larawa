@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 abstract class Controller
 {
@@ -38,5 +40,22 @@ abstract class Controller
     protected function isSiteAdmin(Request $request): bool
     {
         return (bool) $request->user()?->isSiteAdmin();
+    }
+
+    protected function assertSessionAllowed(Workspace $workspace, WhatsappSession $session): void
+    {
+        abort_unless(
+            $session->workspace_id === $workspace->id && $workspace->allowsSessionType($session->type),
+            404,
+        );
+    }
+
+    protected function assertSessionTypeAllowed(Workspace $workspace, string $type): void
+    {
+        if (! $workspace->allowsSessionType($type)) {
+            throw ValidationException::withMessages([
+                'type' => 'This session type is not enabled for the workspace.',
+            ]);
+        }
     }
 }

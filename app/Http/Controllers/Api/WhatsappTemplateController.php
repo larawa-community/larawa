@@ -84,6 +84,7 @@ class WhatsappTemplateController extends Controller
     private function assertSession(WhatsappSession $session, int $workspaceId): void
     {
         abort_unless($session->workspace_id === $workspaceId, 404);
+        abort_unless($session->workspace?->allowsSessionType($session->type), 404);
         if (! $session->isCloudApi()) {
             abort(422, 'Message templates are only available for Official Cloud API sessions.');
         }

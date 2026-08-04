@@ -628,7 +628,7 @@ if (cloudInbox) {
 
         const article = document.createElement('article');
         article.className = `max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] ${outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900'}`;
-        const hasImage = message.type === 'image' && message.media_url;
+        const hasImage = ['image', 'sticker'].includes(message.type) && message.media_url;
         if (hasImage) {
             const media = document.createElement('a');
             media.href = message.download_url || message.media_url;
@@ -639,8 +639,37 @@ if (cloudInbox) {
             image.alt = message.body || 'Shared image';
             image.className = 'max-h-80 w-full object-cover';
             image.loading = 'lazy';
+            image.dataset.cloudInboxMediaImage = '';
+            media.dataset.cloudInboxImageLink = '';
+            image.addEventListener('error', () => showUnavailableImage(image));
             media.append(image);
             article.append(media);
+        } else if (message.type === 'audio' && message.media_url) {
+            const audioCard = document.createElement('div');
+            audioCard.className = 'min-w-[15rem] rounded-xl border border-black/5 bg-white/70 p-3 sm:min-w-80';
+
+            const label = document.createElement('div');
+            label.className = 'mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700';
+            label.innerHTML = '<span class="flex h-7 w-7 items-center justify-center rounded-full bg-[#128c42] text-white"><svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-3.08A7 7 0 0 0 19 11Z"/></svg></span>';
+            label.append(document.createTextNode(message.is_voice ? 'Voice message' : 'Audio message'));
+
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.preload = 'metadata';
+            audio.className = 'h-10 w-full';
+            audio.dataset.cloudInboxMediaAudio = '';
+            audio.addEventListener('error', () => showUnavailableAudio(audio));
+            const source = document.createElement('source');
+            source.src = message.media_url;
+            source.type = message.mime_type || 'audio/ogg';
+            audio.append(source);
+
+            const download = document.createElement('a');
+            download.href = message.download_url || message.media_url;
+            download.className = 'mt-2 inline-flex text-[10px] font-semibold uppercase text-[#128c42]';
+            download.textContent = 'Download audio';
+            audioCard.append(label, audio, download);
+            article.append(audioCard);
         } else if (message.media_url) {
             const media = document.createElement('a');
             media.href = message.download_url || message.media_url;
@@ -688,9 +717,44 @@ if (cloudInbox) {
         return wrapper;
     }
 
+    function showUnavailableImage(image) {
+        const link = image.closest('[data-cloud-inbox-image-link]');
+        if (!link || link.dataset.mediaUnavailable === 'true') return;
+        link.dataset.mediaUnavailable = 'true';
+
+        const unavailable = document.createElement('div');
+        unavailable.className = 'flex min-h-28 items-center justify-center p-5 text-center';
+        const content = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'text-sm font-semibold text-slate-700';
+        title.textContent = 'Image unavailable';
+        const detail = document.createElement('div');
+        detail.className = 'mt-1 text-xs text-slate-500';
+        detail.textContent = 'The media could not be loaded.';
+        content.append(title, detail);
+        unavailable.append(content);
+        link.removeAttribute('href');
+        link.removeAttribute('title');
+        link.replaceChildren(unavailable);
+    }
+
+    function showUnavailableAudio(audio) {
+        const card = audio.parentElement;
+        if (!card || card.dataset.mediaUnavailable === 'true') return;
+        card.dataset.mediaUnavailable = 'true';
+
+        const title = document.createElement('div');
+        title.className = 'text-sm font-semibold text-slate-700';
+        title.textContent = 'Audio unavailable';
+        const detail = document.createElement('div');
+        detail.className = 'mt-1 text-xs text-slate-500';
+        detail.textContent = 'The voice message could not be loaded.';
+        card.replaceChildren(title, detail);
+    }
+
     function updateConversationMessages(messages) {
         if (!messageList) return;
-        const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.type, message.body, message.media_url, message.filename]));
+        const nextSignature = JSON.stringify(messages.map((message) => [message.id, message.status, message.type, message.body, message.media_url, message.mime_type, message.filename, message.is_voice]));
         if (messageSignature === nextSignature) return;
 
         const stayAtBottom = messageSignature === null || messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight < 96;
@@ -864,6 +928,13 @@ if (cloudInbox) {
             mediaSubmit.disabled = true;
             mediaSubmit.textContent = 'Sending…';
         }
+    });
+    cloudInbox.querySelectorAll('[data-cloud-inbox-media-image]').forEach((image) => {
+        if (image.complete && image.naturalWidth === 0) showUnavailableImage(image);
+        else image.addEventListener('error', () => showUnavailableImage(image));
+    });
+    cloudInbox.querySelectorAll('[data-cloud-inbox-media-audio]').forEach((audio) => {
+        audio.addEventListener('error', () => showUnavailableAudio(audio));
     });
     if (messageList) {
         window.requestAnimationFrame(() => {

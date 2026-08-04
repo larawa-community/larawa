@@ -27,7 +27,10 @@ class LogController extends Controller
         return view('dashboard.messages.index', [
             'workspace' => $workspace,
             'messages' => ($this->isSiteAdmin($request) ? $messageLogs->all($filters) : $messageLogs->forWorkspace($workspace, $filters))->paginate(30)->withQueryString(),
-            'sessions' => ($this->isSiteAdmin($request) ? WhatsappSession::query() : $workspace->whatsappSessions())->orderBy('name')->get(['id', 'uuid', 'name']),
+            'sessions' => ($this->isSiteAdmin($request)
+                ? WhatsappSession::query()->allowedByWorkspace()
+                : $workspace->whatsappSessions()->whereIn('type', $workspace->allowedSessionTypes()))
+                ->orderBy('name')->get(['id', 'uuid', 'name']),
             'filters' => $filters,
         ]);
     }

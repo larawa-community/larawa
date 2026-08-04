@@ -117,7 +117,8 @@ class CloudConversationController extends Controller
     private function assertSession(Request $request, WhatsappSession $session): Workspace
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id && $session->isCloudApi(), 404);
+        $this->assertSessionAllowed($workspace, $session);
+        abort_unless($session->isCloudApi(), 404);
 
         return $workspace;
     }

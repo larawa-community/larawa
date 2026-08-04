@@ -87,11 +87,24 @@
                         @php $outgoing = $message->direction === 'outgoing'; @endphp
                         <div class="flex {{ $outgoing ? 'justify-end' : 'justify-start' }}">
                             <article class="max-w-[86%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[72%] {{ $outgoing ? 'rounded-br-sm bg-[#d9fdd3] text-slate-900' : 'rounded-bl-sm border border-slate-200 bg-white text-slate-900' }}">
-                                @if ($message->media_path && $message->type === 'image')
-                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100" title="Download {{ data_get($message->payload, 'filename', 'image') }}">
-                                        <img src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" alt="{{ $message->body ?: 'Shared image' }}" class="max-h-80 w-full object-cover" loading="lazy">
+                                @if ($message->media_path && in_array($message->type, ['image', 'sticker'], true))
+                                    <a href="{{ route('dashboard.messages.media', $message) }}" class="-mx-2 -mt-1 mb-2 block overflow-hidden rounded-xl bg-slate-100" title="Download {{ data_get($message->payload, 'filename', 'image') }}" data-cloud-inbox-image-link>
+                                        <img src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" alt="{{ $message->body ?: 'Shared image' }}" class="max-h-80 w-full object-cover" loading="lazy" data-cloud-inbox-media-image>
                                     </a>
                                     @if ($message->body)<div class="whitespace-pre-wrap break-words text-sm leading-6">{{ $message->body }}</div>@endif
+                                @elseif ($message->media_path && $message->type === 'audio')
+                                    <div class="min-w-[15rem] rounded-xl border border-black/5 bg-white/70 p-3 sm:min-w-80">
+                                        <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                            <span class="flex h-7 w-7 items-center justify-center rounded-full bg-[#128c42] text-white">
+                                                <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21H8v2h8v-2h-3v-3.08A7 7 0 0 0 19 11Z"/></svg>
+                                            </span>
+                                            {{ data_get($message->payload, 'meta_webhook.audio.voice') ? 'Voice message' : 'Audio message' }}
+                                        </div>
+                                        <audio controls preload="metadata" class="h-10 w-full" data-cloud-inbox-media-audio>
+                                            <source src="{{ route('dashboard.messages.media', ['message' => $message, 'preview' => 1]) }}" type="{{ $message->mime_type }}">
+                                        </audio>
+                                        <a href="{{ route('dashboard.messages.media', $message) }}" class="mt-2 inline-flex text-[10px] font-semibold uppercase text-[#128c42]">Download audio</a>
+                                    </div>
                                 @elseif ($message->media_path)
                                     <a href="{{ route('dashboard.messages.media', $message) }}" class="flex min-w-0 items-center gap-3 rounded-xl border border-black/5 bg-white/70 p-3 transition hover:bg-white">
                                         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">

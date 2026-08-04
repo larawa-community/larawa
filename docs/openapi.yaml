@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: LaraWA API
-  version: 13.0.0
-  description: Self-hosted WhatsApp API gateway supporting Meta's Official Cloud API and a whatsapp-web.js Wrapper transport.
+  version: 13.1.0
+  description: Self-hosted WhatsApp API gateway supporting workspace-enabled Meta Official Cloud API and whatsapp-web.js Wrapper transports.
 servers:
   - url: http://localhost:8080/api/v1
 security:
@@ -271,7 +271,7 @@ paths:
   /sessions:
     get:
       summary: List WhatsApp sessions
-      description: Requires `sessions:read`. Supports filtering by status and case-insensitive search across name, UUID, phone number, and status.
+      description: Requires `sessions:read`. Returns only session types enabled for the API key's workspace and supports filtering by status and case-insensitive search across name, UUID, phone number, and status.
       parameters:
         - name: status
           in: query
@@ -288,6 +288,7 @@ paths:
         "200": { description: Sessions }
     post:
       summary: Create a WhatsApp session
+      description: The requested type must be enabled for the workspace. When `type` is omitted, Wrapper remains the default if enabled; otherwise the request creates an Official Cloud API session.
       requestBody:
         required: true
         content:
@@ -297,8 +298,8 @@ paths:
               required: [name]
               properties:
                 name: { type: string, example: Support line }
-                type: { type: string, enum: [whatsapp_wrapper, official_cloud_api], default: whatsapp_wrapper }
-                fallback_session_uuid: { type: string, format: uuid, description: Same-workspace Official Cloud API fallback for a Wrapper session. }
+                type: { type: string, enum: [whatsapp_wrapper, official_cloud_api], description: Defaults to `whatsapp_wrapper` when Wrapper is enabled; otherwise defaults to `official_cloud_api`. }
+                fallback_session_uuid: { type: string, format: uuid, description: Same-workspace Official Cloud API fallback for a Wrapper session; both types must be enabled. }
       responses:
         "201":
           description: Session created. Official sessions include their generated callback URL and verify token for Meta App setup.
@@ -314,10 +315,11 @@ paths:
                     oneOf:
                       - { $ref: "#/components/schemas/MetaWebhookSetup" }
                       - { type: "null" }
+        "422": { description: Validation failed or the requested session type is disabled for the workspace. }
   /sessions/{session}:
     patch:
       summary: Update session provider settings
-      description: Requires `sessions:write`. Updates a Wrapper fallback or rotates Official Cloud API credentials; changed Cloud credentials are validated immediately.
+      description: Requires `sessions:write`. Disabled session types behave as unavailable. Updates a Wrapper fallback or rotates Official Cloud API credentials; changed Cloud credentials are validated immediately.
       parameters:
         - name: session
           in: path
@@ -339,6 +341,7 @@ paths:
                 app_secret: { type: string }
       responses:
         "200": { description: Session settings updated }
+        "404": { description: Session not found or its type is disabled for the workspace. }
     get:
       summary: Get a WhatsApp session
       parameters:
@@ -359,6 +362,7 @@ paths:
                     $ref: "#/components/schemas/Session"
                   worker:
                     $ref: "#/components/schemas/WorkerSessionState"
+        "404": { description: Session not found or its type is disabled for the workspace. }
     delete:
       summary: Delete a WhatsApp session
       parameters:

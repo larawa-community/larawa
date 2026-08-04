@@ -44,7 +44,10 @@ class SessionController extends Controller
             'statusCounts' => $sessionQuery->statusCounts($isSiteAdmin ? null : $workspace),
             'canManageSessions' => $request->user()->can('sessions.manage', $workspace),
             'isSiteAdmin' => $isSiteAdmin,
-            'cloudSessions' => $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->where('status', 'ready')->get(),
+            'allowedSessionTypes' => $workspace->allowedSessionTypes(),
+            'cloudSessions' => $workspace->allowsSessionType(WhatsappSession::TYPE_CLOUD)
+                ? $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->where('status', 'ready')->get()
+                : collect(),
         ]);
     }
 
@@ -57,10 +60,14 @@ class SessionController extends Controller
         ]);
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $workspace);
-        $data['type'] ??= WhatsappSession::TYPE_WRAPPER;
+        $data['type'] ??= $workspace->allowsSessionType(WhatsappSession::TYPE_WRAPPER)
+            ? WhatsappSession::TYPE_WRAPPER
+            : WhatsappSession::TYPE_CLOUD;
+        $this->assertSessionTypeAllowed($workspace, $data['type']);
 
         $fallback = null;
         if (filled($data['fallback_session_uuid'] ?? null)) {
+            $this->assertSessionTypeAllowed($workspace, WhatsappSession::TYPE_CLOUD);
             $fallback = $workspace->whatsappSessions()->where('uuid', $data['fallback_session_uuid'])->where('type', WhatsappSession::TYPE_CLOUD)->first();
             if (! $fallback || $data['type'] !== WhatsappSession::TYPE_WRAPPER) {
                 throw ValidationException::withMessages(['fallback_session_uuid' => 'Choose an Official Cloud API session from this workspace.']);
@@ -110,7 +117,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.view', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
 
         if ($session->isCloudApi()) {
@@ -134,7 +141,9 @@ class SessionController extends Controller
             'messages' => $session->messages()->latest()->limit(20)->get(),
             'discovery' => $discovery,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
-            'cloudSessions' => $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->whereKeyNot($session->id)->get(),
+            'cloudSessions' => $workspace->allowsSessionType(WhatsappSession::TYPE_CLOUD)
+                ? $workspace->whatsappSessions()->where('type', WhatsappSession::TYPE_CLOUD)->whereKeyNot($session->id)->get()
+                : collect(),
         ]);
     }
 
@@ -142,7 +151,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $data = $request->validate([
             'fallback_session_uuid' => ['nullable', 'uuid'],
             'waba_id' => ['nullable', 'string', 'max:120'],
@@ -153,6 +162,9 @@ class SessionController extends Controller
         ]);
 
         if ($session->isWrapper()) {
+            if (filled($data['fallback_session_uuid'] ?? null)) {
+                $this->assertSessionTypeAllowed($workspace, WhatsappSession::TYPE_CLOUD);
+            }
             $fallback = filled($data['fallback_session_uuid'] ?? null)
                 ? $workspace->whatsappSessions()->where('uuid', $data['fallback_session_uuid'])->where('type', WhatsappSession::TYPE_CLOUD)->first()
                 : null;
@@ -198,7 +210,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.view', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
 
         $sync->sync($session);
@@ -237,7 +249,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
 
         try {
@@ -264,7 +276,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
 
         $payload = $this->testMessagePayload($request, $urlGuard);
@@ -289,7 +301,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
         if ($session->isCloudApi()) {
             return back()->with('error', 'Official Cloud API sessions do not support disconnect.');
@@ -318,7 +330,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
         if ($session->isCloudApi()) {
             return back()->with('error', 'Official Cloud API sessions do not support logout.');
@@ -348,7 +360,7 @@ class SessionController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $workspace = $session->workspace;
 
         if ($session->isWrapper()) {

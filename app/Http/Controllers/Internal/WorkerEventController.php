@@ -27,6 +27,7 @@ class WorkerEventController extends Controller
         ]);
 
         $session = WhatsappSession::where('uuid', $data['session_id'])->firstOrFail();
+        abort_unless($session->isWrapper() && $session->workspace?->allowsSessionType($session->type), 404);
         $payload = $data['payload'] ?? [];
         $this->validateEventPayload($data['event'], $payload);
 

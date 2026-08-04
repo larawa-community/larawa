@@ -28,14 +28,23 @@ class SessionController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        return response()->json(['data' => $sessionQuery->forWorkspace($workspace, $filters)->with('fallbackSession')->paginate($filters['per_page'] ?? 50)]);
+        $sessions = $sessionQuery->forWorkspace($workspace, $filters);
+        $sessions->with('workspace');
+        if ($workspace->allowsSessionType(WhatsappSession::TYPE_CLOUD)) {
+            $sessions->with('fallbackSession');
+        }
+
+        return response()->json(['data' => $sessions->paginate($filters['per_page'] ?? 50)]);
     }
 
     public function store(Request $request, WhatsappTransportManager $transports, AuditLogger $audit): JsonResponse
     {
         $workspace = $this->workspace($request);
         $data = $request->validate($this->storeRules());
-        $type = $data['type'] ?? WhatsappSession::TYPE_WRAPPER;
+        $type = $data['type'] ?? ($workspace->allowsSessionType(WhatsappSession::TYPE_WRAPPER)
+            ? WhatsappSession::TYPE_WRAPPER
+            : WhatsappSession::TYPE_CLOUD);
+        $this->assertSessionTypeAllowed($workspace, $type);
         $fallback = $this->resolveFallback($workspace, $data['fallback_session_uuid'] ?? null, $type);
 
         $session = DB::transaction(function () use ($workspace, $data, $type, $fallback): WhatsappSession {
@@ -72,7 +81,7 @@ class SessionController extends Controller
         $audit->log('api.session.created', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, request: $request);
 
         return response()->json(array_filter([
-            'data' => $session->fresh()->load('fallbackSession'),
+            'data' => $this->sessionData($workspace, $session),
             'provider' => $providerState,
             'webhook' => $webhook,
         ], fn ($value) => $value !== null), 201);
@@ -81,7 +90,7 @@ class SessionController extends Controller
     public function update(Request $request, WhatsappSession $session, WhatsappTransportManager $transports, AuditLogger $audit): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:120'],
             'fallback_session_uuid' => ['nullable', 'uuid'],
@@ -130,17 +139,17 @@ class SessionController extends Controller
 
         $audit->log('api.session.updated', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, request: $request);
 
-        return response()->json(['data' => $session->fresh()->load('fallbackSession')]);
+        return response()->json(['data' => $this->sessionData($workspace, $session)]);
     }
 
     public function show(Request $request, WhatsappSession $session, WhatsappSessionSync $sync): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         $providerState = $sync->sync($session);
 
         return response()->json([
-            'data' => $session->fresh()->load('fallbackSession'),
+            'data' => $this->sessionData($workspace, $session),
             'provider' => $providerState,
             'worker' => $session->isWrapper() ? $providerState : null,
         ]);
@@ -149,7 +158,7 @@ class SessionController extends Controller
     public function refresh(Request $request, WhatsappSession $session, WhatsappTransportManager $transports, AuditLogger $audit): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
 
         try {
             $result = $transports->for($session)->connect($session->load('cloudConfig'));
@@ -183,7 +192,7 @@ class SessionController extends Controller
     public function destroy(Request $request, WhatsappSession $session, WhatsappTransportManager $transports, AuditLogger $audit): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
 
         if ($session->isWrapper()) {
             try {
@@ -202,7 +211,7 @@ class SessionController extends Controller
     private function wrapperLifecycle(Request $request, WhatsappSession $session, WhatsappTransportManager $transports, AuditLogger $audit, bool $destroyAuth): JsonResponse
     {
         $workspace = $this->workspace($request);
-        abort_unless($session->workspace_id === $workspace->id, 404);
+        $this->assertSessionAllowed($workspace, $session);
         if ($session->isCloudApi()) {
             return response()->json(['message' => 'Official Cloud API sessions do not support disconnect or logout.'], 422);
         }
@@ -255,6 +264,7 @@ class SessionController extends Controller
         if ($type !== WhatsappSession::TYPE_WRAPPER) {
             throw ValidationException::withMessages(['fallback_session_uuid' => 'Only Wrapper sessions can configure an Official Cloud API fallback.']);
         }
+        $this->assertSessionTypeAllowed($workspace, WhatsappSession::TYPE_CLOUD);
         $fallback = $workspace->whatsappSessions()->where('uuid', $uuid)->where('type', WhatsappSession::TYPE_CLOUD)->first();
         if (! $fallback) {
             throw ValidationException::withMessages(['fallback_session_uuid' => 'The fallback must be an Official Cloud API session in the same workspace.']);
@@ -319,5 +329,15 @@ class SessionController extends Controller
         unset($metadata['worker_error'], $metadata['provider_error']);
 
         return $metadata;
+    }
+
+    private function sessionData(Workspace $workspace, WhatsappSession $session): WhatsappSession
+    {
+        $session = $session->fresh()->load('workspace');
+        if ($workspace->allowsSessionType(WhatsappSession::TYPE_CLOUD)) {
+            $session->load('fallbackSession');
+        }
+
+        return $session;
     }
 }

@@ -80,27 +80,40 @@
                 <h2 class="font-semibold">Create Session</h2>
                 <form method="POST" action="{{ route('dashboard.sessions.store') }}" class="mt-5 space-y-4">
                     @csrf
+                    @php
+                        $allowsWrapper = in_array('whatsapp_wrapper', $allowedSessionTypes, true);
+                        $allowsCloud = in_array('official_cloud_api', $allowedSessionTypes, true);
+                    @endphp
                     <label class="block">
                         <span class="mb-1 block text-sm font-medium text-slate-700">Session name</span>
                         <input name="name" required maxlength="120" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/20" placeholder="Support line">
                     </label>
-                    <label class="block">
-                        <span class="mb-1 block text-sm font-medium text-slate-700">Session type</span>
-                        <select name="type" class="w-full rounded-md border border-slate-300 px-3 py-2">
-                            <option value="whatsapp_wrapper">WhatsApp Wrapper</option>
-                            <option value="official_cloud_api">Official Cloud API</option>
-                        </select>
-                    </label>
-                    <label class="block">
-                        <span class="mb-1 block text-sm font-medium text-slate-700">Official fallback (Wrapper only)</span>
-                        <select name="fallback_session_uuid" class="w-full rounded-md border border-slate-300 px-3 py-2">
-                            <option value="">No automatic fallback</option>
-                            @foreach ($cloudSessions as $cloudSession)
-                                <option value="{{ $cloudSession->uuid }}">{{ $cloudSession->name }}</option>
-                            @endforeach
-                        </select>
-                    </label>
-                    <p class="rounded-md bg-slate-50 p-3 text-xs text-slate-500">For Official Cloud API, LaraWA creates the session first and generates its callback URL and verify token. Meta app credentials are added on the next screen.</p>
+                    @if (count($allowedSessionTypes) > 1)
+                        <label class="block">
+                            <span class="mb-1 block text-sm font-medium text-slate-700">Session type</span>
+                            <select name="type" class="w-full rounded-md border border-slate-300 px-3 py-2">
+                                @if ($allowsWrapper)<option value="whatsapp_wrapper">WhatsApp Wrapper</option>@endif
+                                @if ($allowsCloud)<option value="official_cloud_api">Official Cloud API</option>@endif
+                            </select>
+                        </label>
+                    @else
+                        <input type="hidden" name="type" value="{{ $allowedSessionTypes[0] }}">
+                        <div class="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"><span class="text-slate-500">Session type:</span> <span class="font-semibold">{{ $allowsCloud ? 'Official Cloud API' : 'WhatsApp Wrapper' }}</span></div>
+                    @endif
+                    @if ($allowsWrapper && $allowsCloud)
+                        <label class="block">
+                            <span class="mb-1 block text-sm font-medium text-slate-700">Official fallback (Wrapper only)</span>
+                            <select name="fallback_session_uuid" class="w-full rounded-md border border-slate-300 px-3 py-2">
+                                <option value="">No automatic fallback</option>
+                                @foreach ($cloudSessions as $cloudSession)
+                                    <option value="{{ $cloudSession->uuid }}">{{ $cloudSession->name }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                    @endif
+                    @if ($allowsCloud)
+                        <p class="rounded-md bg-slate-50 p-3 text-xs text-slate-500">For Official Cloud API, LaraWA creates the session first and generates its callback URL and verify token. Meta app credentials are added on the next screen.</p>
+                    @endif
                     <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
                 </form>
             </section>

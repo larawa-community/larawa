@@ -111,7 +111,8 @@ class CloudAccountController extends Controller
     {
         $workspace = $this->workspace($request);
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
-        abort_unless($session->workspace_id === $workspace->id && $session->isCloudApi(), 404);
+        $this->assertSessionAllowed($workspace, $session);
+        abort_unless($session->isCloudApi(), 404);
 
         return $workspace;
     }

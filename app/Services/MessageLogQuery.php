@@ -10,14 +10,29 @@ class MessageLogQuery
 {
     public function forWorkspace(Workspace $workspace, array $filters = [])
     {
-        $query = $workspace->messages()->with(['workspace', 'whatsappSession']);
+        $query = $workspace->messages()
+            ->whereHas('whatsappSession', fn (Builder $query) => $query->whereIn('type', $workspace->allowedSessionTypes()))
+            ->where(function (Builder $query) use ($workspace): void {
+                $query->whereNull('transport_session_id')
+                    ->orWhereHas('transportSession', fn (Builder $transport) => $transport->whereIn('type', $workspace->allowedSessionTypes()));
+            })
+            ->with(['workspace', 'whatsappSession']);
 
         return $this->applyFilters($query, $filters);
     }
 
     public function all(array $filters = [])
     {
-        return $this->applyFilters(Message::query()->with(['workspace', 'whatsappSession']), $filters);
+        return $this->applyFilters(
+            Message::query()
+                ->whereHas('whatsappSession', fn (Builder $query) => $query->allowedByWorkspace())
+                ->where(function (Builder $query): void {
+                    $query->whereNull('transport_session_id')
+                        ->orWhereHas('transportSession', fn (Builder $transport) => $transport->allowedByWorkspace());
+                })
+                ->with(['workspace', 'whatsappSession']),
+            $filters,
+        );
     }
 
     private function applyFilters($query, array $filters)

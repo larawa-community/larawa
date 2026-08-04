@@ -110,18 +110,18 @@
                 </dl>
             </div>
             @endif
-            @if ($canManageSessions)
+            @if ($canManageSessions && ($session->isCloudApi() || $workspace->allowsSessionType(\App\Models\WhatsappSession::TYPE_CLOUD)))
                 <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="mt-6 space-y-3 border-t border-slate-100 pt-5">
                     @csrf @method('PATCH')
                     <h3 class="text-sm font-semibold">Provider settings</h3>
-                    @if ($session->isWrapper())
+                    @if ($session->isWrapper() && $workspace->allowsSessionType(\App\Models\WhatsappSession::TYPE_CLOUD))
                         <select name="fallback_session_uuid" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                             <option value="">No Official fallback</option>
                             @foreach ($cloudSessions as $cloudSession)
                                 <option value="{{ $cloudSession->uuid }}" @selected($session->fallback_session_id === $cloudSession->id)>{{ $cloudSession->name }}</option>
                             @endforeach
                         </select>
-                    @else
+                    @elseif ($session->isCloudApi())
                         <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WhatsApp Business Account (WABA) ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID from WhatsApp API Setup" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="access_token" type="password" placeholder="Access token used for Graph API requests" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
