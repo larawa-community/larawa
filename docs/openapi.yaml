@@ -155,7 +155,7 @@ components:
         meta_template_id: { type: [string, "null"] }
         name: { type: string }
         language: { type: string }
-        category: { type: string, enum: [UTILITY, MARKETING] }
+        category: { type: string, enum: [UTILITY, MARKETING, AUTHENTICATION] }
         parameter_format: { type: [string, "null"], enum: [POSITIONAL, NAMED, null] }
         components: { type: array, items: { type: object } }
         status: { type: string, enum: [PENDING, APPROVED, REJECTED, PAUSED, DISABLED] }
@@ -165,11 +165,12 @@ components:
         is_active: { type: boolean }
     WhatsappTemplateInput:
       type: object
-      required: [name, language, category, body]
+      required: [name, language, category]
+      description: Utility and Marketing templates require `body`. Authentication templates require `authentication` and use Meta's preset localized message text.
       properties:
         name: { type: string, pattern: "^[a-z0-9_]+$" }
         language: { type: string, example: en_US }
-        category: { type: string, enum: [UTILITY, MARKETING] }
+        category: { type: string, enum: [UTILITY, MARKETING, AUTHENTICATION] }
         parameter_format: { type: string, enum: [POSITIONAL, NAMED], default: POSITIONAL }
         header:
           type: object
@@ -217,6 +218,19 @@ components:
               url: { type: string, description: Required for URL buttons; may include a Meta variable placeholder. }
               example: { type: string }
               phone_number: { type: string }
+        authentication:
+          type: object
+          description: Required when category is AUTHENTICATION.
+          required: [otp_type]
+          properties:
+            add_security_recommendation: { type: boolean, default: false }
+            code_expiration_minutes: { type: integer, minimum: 1, maximum: 90 }
+            otp_type: { type: string, enum: [COPY_CODE, ONE_TAP, ZERO_TAP] }
+            text: { type: string, maxLength: 25, default: Copy Code }
+            autofill_text: { type: string, maxLength: 25, default: Autofill }
+            package_name: { type: string, description: Required for ONE_TAP and ZERO_TAP. }
+            signature_hash: { type: string, description: Required for ONE_TAP and ZERO_TAP. }
+            zero_tap_terms_accepted: { type: boolean, description: Must be true for ZERO_TAP. }
     Webhook:
       type: object
       properties:
@@ -832,7 +846,7 @@ paths:
       parameters:
         - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: status, in: query, schema: { type: string } }
-        - { name: category, in: query, schema: { type: string, enum: [UTILITY, MARKETING] } }
+        - { name: category, in: query, schema: { type: string, enum: [UTILITY, MARKETING, AUTHENTICATION] } }
         - { name: language, in: query, schema: { type: string } }
         - { name: active, in: query, schema: { type: boolean } }
         - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
@@ -876,12 +890,13 @@ paths:
               type: object
               description: Name and language are immutable. Category may be changed alone. Component edits use the same header/body/footer/buttons shapes as WhatsappTemplateInput and must include the complete body.
               properties:
-                category: { type: string, enum: [UTILITY, MARKETING] }
+                category: { type: string, enum: [UTILITY, MARKETING, AUTHENTICATION] }
                 parameter_format: { type: string, enum: [POSITIONAL, NAMED] }
                 header: { type: object }
                 body: { type: object }
                 footer: { type: object }
                 buttons: { type: array, maxItems: 10, items: { type: object } }
+                authentication: { type: object, description: Authentication component options; required when changing authentication components. }
       responses:
         "200": { description: Template edit submitted to Meta; no local template cache is written }
         "404": { description: Template does not belong to the session/workspace }

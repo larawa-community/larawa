@@ -15,12 +15,34 @@ use Illuminate\Validation\ValidationException;
 
 class MetaWhatsappTemplateService
 {
+    public const LANGUAGE_OPTIONS = [
+        'af' => 'Afrikaans', 'sq' => 'Albanian', 'ar' => 'Arabic', 'az' => 'Azerbaijani',
+        'bn' => 'Bengali', 'bg' => 'Bulgarian', 'ca' => 'Catalan', 'zh_CN' => 'Chinese (China)',
+        'zh_HK' => 'Chinese (Hong Kong)', 'zh_TW' => 'Chinese (Taiwan)', 'hr' => 'Croatian',
+        'cs' => 'Czech', 'da' => 'Danish', 'nl' => 'Dutch', 'en' => 'English',
+        'en_GB' => 'English (UK)', 'en_US' => 'English (US)', 'et' => 'Estonian',
+        'fil' => 'Filipino', 'fi' => 'Finnish', 'fr' => 'French', 'ka' => 'Georgian',
+        'de' => 'German', 'el' => 'Greek', 'gu' => 'Gujarati', 'ha' => 'Hausa',
+        'he' => 'Hebrew', 'hi' => 'Hindi', 'hu' => 'Hungarian', 'id' => 'Indonesian',
+        'ga' => 'Irish', 'it' => 'Italian', 'ja' => 'Japanese', 'kn' => 'Kannada',
+        'kk' => 'Kazakh', 'rw_RW' => 'Kinyarwanda', 'ko' => 'Korean', 'ky_KG' => 'Kyrgyz (Kyrgyzstan)',
+        'lo' => 'Lao', 'lv' => 'Latvian', 'lt' => 'Lithuanian', 'mk' => 'Macedonian',
+        'ms' => 'Malay', 'ml' => 'Malayalam', 'mr' => 'Marathi', 'nb' => 'Norwegian',
+        'ps_AF' => 'Pashto', 'fa' => 'Persian', 'pl' => 'Polish', 'pt_BR' => 'Portuguese (Brazil)',
+        'pt_PT' => 'Portuguese (Portugal)', 'pa' => 'Punjabi', 'ro' => 'Romanian', 'ru' => 'Russian',
+        'sr' => 'Serbian', 'sk' => 'Slovak', 'sl' => 'Slovenian', 'es' => 'Spanish',
+        'es_AR' => 'Spanish (Argentina)', 'es_ES' => 'Spanish (Spain)', 'es_MX' => 'Spanish (Mexico)',
+        'sw' => 'Swahili', 'sv' => 'Swedish', 'ta' => 'Tamil', 'te' => 'Telugu',
+        'th' => 'Thai', 'tr' => 'Turkish', 'uk' => 'Ukrainian', 'ur' => 'Urdu',
+        'uz' => 'Uzbek', 'vi' => 'Vietnamese', 'zu' => 'Zulu',
+    ];
+
     public function rules(bool $updating = false): array
     {
         return array_filter([
             'name' => $updating ? null : ['required', 'string', 'max:512', 'regex:/^[a-z0-9_]+$/'],
-            'language' => $updating ? null : ['required', 'string', 'max:35'],
-            'category' => [$updating ? 'sometimes' : 'required', Rule::in(['UTILITY', 'MARKETING'])],
+            'language' => $updating ? null : ['required', 'string', Rule::in(array_keys(self::LANGUAGE_OPTIONS))],
+            'category' => [$updating ? 'sometimes' : 'required', Rule::in(['UTILITY', 'MARKETING', 'AUTHENTICATION'])],
             'parameter_format' => ['nullable', Rule::in(['POSITIONAL', 'NAMED'])],
             'header' => ['nullable', 'array'],
             'header.type' => ['required_with:header', Rule::in(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'])],
@@ -30,8 +52,8 @@ class MetaWhatsappTemplateService
             'header.sample_media.filename' => ['required_with:header.sample_media', 'string', 'max:255'],
             'header.sample_media.mime_type' => ['required_with:header.sample_media', 'string', 'max:120'],
             'header.sample_media.data_base64' => ['required_with:header.sample_media', 'string'],
-            'body' => [$updating ? 'sometimes' : 'required', 'array'],
-            'body.text' => ['required_with:body', 'string', 'max:1024'],
+            'body' => [$updating ? 'sometimes' : 'required_unless:category,AUTHENTICATION', 'array'],
+            'body.text' => [$updating ? 'required_with:body' : 'required_unless:category,AUTHENTICATION', 'string', 'max:1024'],
             'body.example_values' => ['nullable', 'array'],
             'body.example_values.*' => ['string', 'max:1024'],
             'body.example_named_parameters' => ['nullable', 'array'],
@@ -45,6 +67,15 @@ class MetaWhatsappTemplateService
             'buttons.*.url' => ['nullable', 'string', 'max:2000'],
             'buttons.*.example' => ['nullable', 'string', 'max:2000'],
             'buttons.*.phone_number' => ['nullable', 'string', 'max:32'],
+            'authentication' => ['required_if:category,AUTHENTICATION', 'array'],
+            'authentication.add_security_recommendation' => ['nullable', 'boolean'],
+            'authentication.code_expiration_minutes' => ['nullable', 'integer', 'min:1', 'max:90'],
+            'authentication.otp_type' => ['required_if:category,AUTHENTICATION', Rule::in(['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'])],
+            'authentication.text' => ['nullable', 'string', 'max:25'],
+            'authentication.autofill_text' => ['nullable', 'string', 'max:25'],
+            'authentication.package_name' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
+            'authentication.signature_hash' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
+            'authentication.zero_tap_terms_accepted' => ['nullable', 'boolean'],
         ]);
     }
 
@@ -105,7 +136,7 @@ class MetaWhatsappTemplateService
             'name' => $payload['name'],
             'language' => $payload['language'],
             'category' => $payload['category'],
-            'parameter_format' => $payload['parameter_format'] ?? null,
+            'parameter_format' => $payload['category'] === 'AUTHENTICATION' ? null : ($payload['parameter_format'] ?? null),
             'components' => $components,
         ], fn ($value) => $value !== null);
 
@@ -130,20 +161,26 @@ class MetaWhatsappTemplateService
         $config = $this->configuration($session);
         $template = $this->find($session, $metaTemplateId);
 
-        $hasComponentChanges = collect(['header', 'body', 'footer', 'buttons'])->contains(fn ($key) => array_key_exists($key, $payload));
-        if ($hasComponentChanges && ! isset($payload['body'])) {
+        $hasComponentChanges = collect(['header', 'body', 'footer', 'buttons', 'authentication'])->contains(fn ($key) => array_key_exists($key, $payload));
+        if ($hasComponentChanges && ($payload['category'] ?? $template->category) !== 'AUTHENTICATION' && ! isset($payload['body'])) {
             throw ValidationException::withMessages(['body' => 'The complete body is required when editing template components.']);
         }
 
         $components = $hasComponentChanges ? $this->buildComponents($config, $payload) : null;
-        $request = array_filter([
+        $changes = array_filter([
             'category' => $payload['category'] ?? null,
-            'parameter_format' => $payload['parameter_format'] ?? null,
+            'parameter_format' => ($payload['category'] ?? $template->category) === 'AUTHENTICATION'
+                ? null
+                : ($payload['parameter_format'] ?? null),
             'components' => $components,
         ], fn ($value) => $value !== null);
-        if ($request === []) {
+        if ($changes === []) {
             throw ValidationException::withMessages(['template' => 'Provide a category or complete template components to edit.']);
         }
+        $request = array_merge([
+            'name' => $template->name,
+            'language' => $template->language,
+        ], $changes);
 
         $result = $this->request(fn () => $this->http($config)->post($this->url($metaTemplateId), $request)->throw()->json());
 
@@ -174,6 +211,10 @@ class MetaWhatsappTemplateService
 
     private function buildComponents(WhatsappCloudConfig $config, array $payload): array
     {
+        if (($payload['category'] ?? null) === 'AUTHENTICATION') {
+            return $this->buildAuthenticationComponents($payload['authentication'] ?? []);
+        }
+
         $components = [];
         if (isset($payload['header'])) {
             $header = $payload['header'];
@@ -240,6 +281,46 @@ class MetaWhatsappTemplateService
             }
             $components[] = ['type' => 'BUTTONS', 'buttons' => $buttons];
         }
+
+        return $components;
+    }
+
+    private function buildAuthenticationComponents(array $authentication): array
+    {
+        $otpType = $authentication['otp_type'] ?? 'COPY_CODE';
+        $body = ['type' => 'BODY'];
+        if ((bool) ($authentication['add_security_recommendation'] ?? false)) {
+            $body['add_security_recommendation'] = true;
+        }
+
+        $components = [$body];
+        if (filled($authentication['code_expiration_minutes'] ?? null)) {
+            $components[] = [
+                'type' => 'FOOTER',
+                'code_expiration_minutes' => (int) $authentication['code_expiration_minutes'],
+            ];
+        }
+
+        $button = [
+            'type' => 'OTP',
+            'otp_type' => $otpType,
+            'text' => $authentication['text'] ?? 'Copy Code',
+        ];
+        if (in_array($otpType, ['ONE_TAP', 'ZERO_TAP'], true)) {
+            $button['autofill_text'] = $authentication['autofill_text'] ?? 'Autofill';
+            $button['package_name'] = $authentication['package_name'];
+            $button['signature_hash'] = $authentication['signature_hash'];
+        }
+        if ($otpType === 'ZERO_TAP') {
+            if (! (bool) ($authentication['zero_tap_terms_accepted'] ?? false)) {
+                throw ValidationException::withMessages([
+                    'authentication.zero_tap_terms_accepted' => 'You must accept Meta\'s zero-tap terms before creating this template.',
+                ]);
+            }
+            $button['zero_tap_terms_accepted'] = true;
+        }
+
+        $components[] = ['type' => 'BUTTONS', 'buttons' => [$button]];
 
         return $components;
     }
@@ -336,10 +417,12 @@ class MetaWhatsappTemplateService
             return $callback();
         } catch (RequestException $exception) {
             $error = $exception->response->json('error') ?: [];
-            $message = $error['message'] ?? 'Meta rejected the template operation.';
+            $message = $error['error_user_msg'] ?? $error['message'] ?? 'Meta rejected the template operation.';
             $code = $error['code'] ?? null;
+            $subcode = $error['error_subcode'] ?? null;
+            $reference = collect(array_filter([$code ? "error {$code}" : null, $subcode ? "subcode {$subcode}" : null]))->implode(', ');
             throw ValidationException::withMessages([
-                'meta' => $code ? "{$message} (Meta error {$code})" : $message,
+                'meta' => $reference ? "{$message} (Meta {$reference})" : $message,
             ]);
         } catch (ConnectionException) {
             throw ValidationException::withMessages(['meta' => 'Meta Graph API is unavailable. Try again without changing the Cloud session state.']);

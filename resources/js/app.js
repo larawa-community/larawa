@@ -283,6 +283,12 @@ document.querySelectorAll('[data-template-editor]').forEach((editor) => {
     const mediaImage = editor.querySelector('[data-template-preview-image]');
     const mediaLabel = editor.querySelector('[data-template-preview-media-label]');
     const buttons = editor.querySelector('[data-template-preview-buttons]');
+    const category = editor.querySelector('[data-template-category]');
+    const standardFields = editor.querySelector('[data-standard-template-fields]');
+    const authenticationFields = editor.querySelector('[data-authentication-template-fields]');
+    const authenticationOtpType = editor.querySelector('[data-authentication-otp-type]');
+    const authenticationAppFields = [...editor.querySelectorAll('[data-authentication-app-field]')];
+    const authenticationZeroTap = editor.querySelector('[data-authentication-zero-tap]');
     let previewObjectUrl = null;
 
     if (!form) return;
@@ -312,6 +318,50 @@ document.querySelectorAll('[data-template-editor]').forEach((editor) => {
     }
 
     function renderTemplatePreview() {
+        const isAuthentication = category?.value === 'AUTHENTICATION';
+        const otpType = authenticationOtpType?.value || 'COPY_CODE';
+        standardFields?.classList.toggle('hidden', isAuthentication);
+        authenticationFields?.classList.toggle('hidden', !isAuthentication);
+        standardFields?.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = isAuthentication; });
+        authenticationFields?.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = !isAuthentication; });
+
+        const usesAndroidApp = isAuthentication && ['ONE_TAP', 'ZERO_TAP'].includes(otpType);
+        authenticationAppFields.forEach((field) => {
+            field.classList.toggle('hidden', !usesAndroidApp);
+            const input = field.querySelector('input');
+            if (input) {
+                input.disabled = !usesAndroidApp;
+                input.required = usesAndroidApp;
+            }
+        });
+        if (authenticationZeroTap) {
+            const isZeroTap = isAuthentication && otpType === 'ZERO_TAP';
+            authenticationZeroTap.classList.toggle('hidden', !isZeroTap);
+            authenticationZeroTap.classList.toggle('flex', isZeroTap);
+            authenticationZeroTap.querySelectorAll('input').forEach((field) => { field.disabled = !isZeroTap; });
+            const confirmation = authenticationZeroTap.querySelector('input[type="checkbox"]');
+            if (confirmation) confirmation.required = isZeroTap;
+        }
+
+        if (isAuthentication) {
+            const addSecurity = form.elements.namedItem('authentication[add_security_recommendation]')?.value === '1'
+                || form.querySelector('input[name="authentication[add_security_recommendation]"][type="checkbox"]')?.checked;
+            const expiration = value('authentication[code_expiration_minutes]');
+            header.classList.add('hidden');
+            media.classList.add('hidden');
+            body.textContent = `{{1}} is your verification code.${addSecurity ? ' For your security, do not share this code.' : ''}`;
+            footer.textContent = expiration ? `This code expires in ${expiration} minutes.` : '';
+            footer.classList.toggle('hidden', !expiration);
+            buttons.replaceChildren();
+            const previewButton = document.createElement('div');
+            previewButton.className = 'mt-3 border-t border-slate-100 pt-2 text-center text-sm font-semibold text-sky-600';
+            previewButton.textContent = otpType === 'COPY_CODE'
+                ? (value('authentication[text]') || 'Copy Code')
+                : (value('authentication[autofill_text]') || 'Autofill');
+            buttons.append(previewButton);
+            return;
+        }
+
         const headerType = value('header_type') || 'NONE';
         const headerText = substituteVariables(value('header_text'), [value('header_example_text')]);
         const bodyText = substituteVariables(value('body_text'), examples());

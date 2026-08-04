@@ -100,6 +100,10 @@ class WhatsappTemplateManagementTest extends TestCase
             return $request['components'][1]['example']['body_text'] === [['John', 'A-123']]
                 && $request['components'][3]['buttons'][1]['example'] === ['A-123'];
         });
+        Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/'.$remote['id'])
+            && $request['name'] === 'order_confirmation'
+            && $request['language'] === 'en_US'
+            && $request['category'] === 'MARKETING');
         $this->assertSame(1, AuditLog::where('action', 'api.whatsapp_template.created')->count());
         $this->assertSame(1, AuditLog::where('action', 'api.whatsapp_template.updated')->count());
     }
@@ -134,6 +138,85 @@ class WhatsappTemplateManagementTest extends TestCase
             $response->json('data.components.0.example.header_handle'),
         );
         $this->assertDatabaseCount('whatsapp_message_templates', 0);
+    }
+
+    public function test_api_creates_authentication_templates_with_meta_preset_components(): void
+    {
+        [$workspace, $session] = $this->cloudSession();
+        [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
+        Http::fake([
+            'https://graph.facebook.com/v25.0/waba-1/message_templates' => Http::response([
+                'id' => '983328304742815',
+                'status' => 'APPROVED',
+                'category' => 'AUTHENTICATION',
+            ]),
+        ]);
+
+        $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
+            'name' => 'login_code',
+            'language' => 'ja',
+            'category' => 'AUTHENTICATION',
+            'authentication' => [
+                'add_security_recommendation' => true,
+                'code_expiration_minutes' => 10,
+                'otp_type' => 'ONE_TAP',
+                'text' => 'Copy Code',
+                'autofill_text' => 'Autofill',
+                'package_name' => 'com.example.app',
+                'signature_hash' => 'K8a/AINcGX7',
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.category', 'AUTHENTICATION')
+            ->assertJsonPath('data.language', 'ja');
+
+        Http::assertSent(fn (Request $request) => $request->url() === 'https://graph.facebook.com/v25.0/waba-1/message_templates'
+            && $request['language'] === 'ja'
+            && ! isset($request['parameter_format'])
+            && $request['components'] === [
+                ['type' => 'BODY', 'add_security_recommendation' => true],
+                ['type' => 'FOOTER', 'code_expiration_minutes' => 10],
+                ['type' => 'BUTTONS', 'buttons' => [[
+                    'type' => 'OTP',
+                    'otp_type' => 'ONE_TAP',
+                    'text' => 'Copy Code',
+                    'autofill_text' => 'Autofill',
+                    'package_name' => 'com.example.app',
+                    'signature_hash' => 'K8a/AINcGX7',
+                ]]],
+            ]);
+    }
+
+    public function test_authentication_template_validation_rejects_unknown_language_and_unaccepted_zero_tap_terms(): void
+    {
+        [$workspace, $session] = $this->cloudSession();
+        [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
+        Http::fake();
+
+        $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
+            'name' => 'login_code',
+            'language' => 'not_a_meta_language',
+            'category' => 'AUTHENTICATION',
+            'authentication' => [
+                'otp_type' => 'ZERO_TAP',
+                'package_name' => 'com.example.app',
+                'signature_hash' => 'signature',
+                'zero_tap_terms_accepted' => false,
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('language');
+
+        $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
+            'name' => 'login_code',
+            'language' => 'en_US',
+            'category' => 'AUTHENTICATION',
+            'authentication' => [
+                'otp_type' => 'ZERO_TAP',
+                'package_name' => 'com.example.app',
+                'signature_hash' => 'signature',
+                'zero_tap_terms_accepted' => false,
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('authentication.zero_tap_terms_accepted');
+
+        Http::assertNothingSent();
     }
 
     public function test_scopes_workspace_ownership_and_meta_errors_are_enforced_without_failing_session(): void

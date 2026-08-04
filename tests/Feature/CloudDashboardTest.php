@@ -566,9 +566,50 @@ class CloudDashboardTest extends TestCase
                 ->assertOk()
                 ->assertSee('Quick preview')
                 ->assertSee('data-template-editor', false)
+                ->assertSee('<select name="language"', false)
+                ->assertSee('English (US) · en_US')
+                ->assertSee('Japanese · ja')
+                ->assertSee('Authentication')
+                ->assertSee('One-tap autofill')
+                ->assertSee('Zero-tap autofill')
                 ->assertSee('data-template-preview-body', false)
                 ->assertSee('nothing is uploaded');
         }
+    }
+
+    public function test_dashboard_creates_an_authentication_template_from_the_guided_fields(): void
+    {
+        [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
+        Http::fake([
+            'https://graph.facebook.com/v25.0/waba-dashboard/message_templates' => Http::response([
+                'id' => '983328304742817',
+                'status' => 'APPROVED',
+                'category' => 'AUTHENTICATION',
+            ]),
+        ]);
+
+        $this->actingAs($admin)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.templates.store', $session), [
+                'name' => 'login_code',
+                'language' => 'ja',
+                'category' => 'AUTHENTICATION',
+                'authentication' => [
+                    'add_security_recommendation' => '1',
+                    'code_expiration_minutes' => '5',
+                    'otp_type' => 'COPY_CODE',
+                    'text' => 'Copy Code',
+                    'zero_tap_terms_accepted' => '0',
+                ],
+            ])
+            ->assertRedirect(route('dashboard.sessions.templates.show', [$session, '983328304742817']))
+            ->assertSessionHas('status', 'Template submitted to Meta for review.');
+
+        Http::assertSent(fn ($request) => $request['category'] === 'AUTHENTICATION'
+            && $request['language'] === 'ja'
+            && $request['components'][0] === ['type' => 'BODY', 'add_security_recommendation' => true]
+            && $request['components'][1] === ['type' => 'FOOTER', 'code_expiration_minutes' => 5]
+            && data_get($request->data(), 'components.2.buttons.0.otp_type') === 'COPY_CODE');
     }
 
     /** @return array{Workspace, WhatsappSession, User} */

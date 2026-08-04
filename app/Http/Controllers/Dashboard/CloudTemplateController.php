@@ -227,6 +227,7 @@ class CloudTemplateController extends Controller
             'editingTemplate' => $editingTemplate,
             'editorMode' => $editorMode,
             'templateDetail' => $templateDetail,
+            'templateLanguages' => MetaWhatsappTemplateService::LANGUAGE_OPTIONS,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
         ]);
@@ -236,14 +237,14 @@ class CloudTemplateController extends Controller
     {
         $input = $request->validate([
             'name' => [$updating ? 'nullable' : 'required', 'string', 'max:512'],
-            'language' => [$updating ? 'nullable' : 'required', 'string', 'max:35'],
-            'category' => ['required', 'in:UTILITY,MARKETING'],
-            'parameter_format' => ['required', 'in:POSITIONAL,NAMED'],
-            'header_type' => ['required', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
+            'language' => [$updating ? 'nullable' : 'required', 'string', 'in:'.implode(',', array_keys(MetaWhatsappTemplateService::LANGUAGE_OPTIONS))],
+            'category' => ['required', 'in:UTILITY,MARKETING,AUTHENTICATION'],
+            'parameter_format' => ['required_unless:category,AUTHENTICATION', 'nullable', 'in:POSITIONAL,NAMED'],
+            'header_type' => ['required_unless:category,AUTHENTICATION', 'nullable', 'in:NONE,TEXT,IMAGE,VIDEO,DOCUMENT'],
             'header_text' => ['nullable', 'string', 'max:60'],
             'header_example_text' => ['nullable', 'string', 'max:60'],
             'header_sample_media' => ['nullable', 'file', 'max:20480'],
-            'body_text' => ['required', 'string', 'max:1024'],
+            'body_text' => ['required_unless:category,AUTHENTICATION', 'nullable', 'string', 'max:1024'],
             'body_example_values' => ['nullable', 'string', 'max:8192'],
             'body_named_examples' => ['nullable', 'string', 'max:8192'],
             'footer_text' => ['nullable', 'string', 'max:60'],
@@ -253,7 +254,30 @@ class CloudTemplateController extends Controller
             'buttons.*.url' => ['nullable', 'string', 'max:2000'],
             'buttons.*.example' => ['nullable', 'string', 'max:2000'],
             'buttons.*.phone_number' => ['nullable', 'string', 'max:40'],
+            'authentication' => ['required_if:category,AUTHENTICATION', 'nullable', 'array'],
+            'authentication.add_security_recommendation' => ['nullable', 'boolean'],
+            'authentication.code_expiration_minutes' => ['nullable', 'integer', 'min:1', 'max:90'],
+            'authentication.otp_type' => ['required_if:category,AUTHENTICATION', 'nullable', 'in:COPY_CODE,ONE_TAP,ZERO_TAP'],
+            'authentication.text' => ['nullable', 'string', 'max:25'],
+            'authentication.autofill_text' => ['nullable', 'string', 'max:25'],
+            'authentication.package_name' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
+            'authentication.signature_hash' => ['nullable', 'required_if:authentication.otp_type,ONE_TAP,ZERO_TAP', 'string', 'max:224'],
+            'authentication.zero_tap_terms_accepted' => ['nullable', 'boolean'],
         ]);
+
+        if (($input['category'] ?? null) === 'AUTHENTICATION') {
+            $payload = [
+                'name' => $updating ? null : ($input['name'] ?? null),
+                'language' => $updating ? null : ($input['language'] ?? null),
+                'category' => 'AUTHENTICATION',
+                'authentication' => array_merge($input['authentication'] ?? [], [
+                    'add_security_recommendation' => $request->boolean('authentication.add_security_recommendation'),
+                    'zero_tap_terms_accepted' => $request->boolean('authentication.zero_tap_terms_accepted'),
+                ]),
+            ];
+
+            return Validator::make(array_filter($payload, fn ($value) => $value !== null), $templates->rules($updating))->validate();
+        }
 
         $header = null;
         if (($input['header_type'] ?? 'NONE') !== 'NONE') {

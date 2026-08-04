@@ -19,7 +19,7 @@ class WhatsappTemplateController extends Controller
         $this->assertSession($session, $workspace->id);
         $filters = $request->validate([
             'status' => ['nullable', 'string', 'max:32'],
-            'category' => ['nullable', Rule::in(['UTILITY', 'MARKETING'])],
+            'category' => ['nullable', Rule::in(['UTILITY', 'MARKETING', 'AUTHENTICATION'])],
             'language' => ['nullable', 'string', 'max:35'],
             'active' => ['nullable', 'boolean'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
