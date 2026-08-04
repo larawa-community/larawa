@@ -802,7 +802,7 @@ paths:
         "422": { description: Customer service window is closed (`customer_service_window_closed`) }
   /sessions/{session}/conversations/{conversation}/messages/template:
     post:
-      summary: Send an approved cached template to a conversation
+      summary: Send an approved live Meta template to a conversation
       description: Requires `messages:send`. Active approved templates can be sent whether the customer-service window is open or closed.
       parameters:
         - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
@@ -815,7 +815,7 @@ paths:
               type: object
               required: [template_id]
               properties:
-                template_id: { type: integer }
+                template_id: { type: string, pattern: "^[0-9]+$", example: "983328304742813", description: Numeric Meta template ID. }
                 components: { type: array, items: { type: object } }
                 idempotency_key: { type: string, maxLength: 120 }
       responses:
@@ -823,8 +823,8 @@ paths:
         "404": { description: Conversation or approved template does not belong to this session }
   /sessions/{session}/templates:
     get:
-      summary: List cached Meta message templates
-      description: Requires `templates:read` and an Official Cloud API session. This endpoint reads the local cache and never contacts Meta.
+      summary: List live Meta message templates
+      description: Requires `templates:read` and an Official Cloud API session. Every request fetches the complete template catalog directly from Meta Graph API; LaraWA does not persist the returned templates.
       parameters:
         - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: status, in: query, schema: { type: string } }
@@ -833,7 +833,7 @@ paths:
         - { name: active, in: query, schema: { type: boolean } }
         - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
-        "200": { description: Paginated cached templates }
+        "200": { description: Paginated templates fetched from Meta }
         "422": { description: Templates are not available for this session type }
     post:
       summary: Create a Meta message template
@@ -846,24 +846,24 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/WhatsappTemplateInput" }
       responses:
-        "201": { description: Template submitted to Meta and cached }
+        "201": { description: Template submitted to Meta; no local template cache is written }
         "422": { description: Invalid template or normalized Meta Graph API error }
   /sessions/{session}/templates/sync:
     post:
-      summary: Synchronize templates from Meta
-      description: Requires `templates:write`. Follows all Meta pages and marks remotely missing cached templates inactive without deleting history.
+      summary: Refresh templates from Meta
+      description: Backward-compatible refresh endpoint requiring `templates:write`. It follows all Meta pages and returns live data without writing a local template cache.
       parameters:
         - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        "200": { description: Cached template catalog after synchronization }
+        "200": { description: Live Meta template catalog }
         "422": { description: Cloud credentials are incomplete or Meta rejected the operation }
   /sessions/{session}/templates/{template}:
     patch:
       summary: Edit a Meta message template
-      description: Requires `templates:write`. Template name and language are immutable. Send the complete body whenever changing components; Meta review restrictions still apply.
+      description: Requires `templates:write`. The path value is the numeric Meta template ID. Template name and language are immutable. Send the complete body whenever changing components; Meta review restrictions still apply.
       parameters:
         - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
-        - { name: template, in: path, required: true, schema: { type: integer } }
+        - { name: template, in: path, required: true, schema: { type: string, pattern: "^[0-9]+$", example: "983328304742813" } }
       requestBody:
         required: true
         content:
@@ -879,7 +879,7 @@ paths:
                 footer: { type: object }
                 buttons: { type: array, maxItems: 10, items: { type: object } }
       responses:
-        "200": { description: Template edit submitted to Meta and cached }
+        "200": { description: Template edit submitted to Meta; no local template cache is written }
         "404": { description: Template does not belong to the session/workspace }
         "422": { description: Invalid edit or normalized Meta Graph API error }
   /sessions/{session}/messages/bulk:

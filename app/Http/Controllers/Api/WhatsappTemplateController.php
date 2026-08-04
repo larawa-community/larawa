@@ -3,17 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\Rule;
 
 class WhatsappTemplateController extends Controller
 {
-    public function index(Request $request, WhatsappSession $session): JsonResponse
+    public function index(Request $request, WhatsappSession $session, MetaWhatsappTemplateService $templates): JsonResponse
     {
         $workspace = $this->workspace($request);
         $this->assertSession($session, $workspace->id);
@@ -25,17 +25,27 @@ class WhatsappTemplateController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $query = $session->messageTemplates()->latest('updated_at');
+        $items = $templates->all($session);
         foreach (['status', 'category', 'language'] as $filter) {
             if (filled($filters[$filter] ?? null)) {
-                $query->where($filter, $filters[$filter]);
+                $items = $items->where($filter, $filters[$filter]);
             }
         }
         if (array_key_exists('active', $filters)) {
-            $query->where('is_active', $filters['active']);
+            $items = $items->where('is_active', $filters['active']);
         }
 
-        return response()->json(['data' => $query->paginate($filters['per_page'] ?? 50)]);
+        $perPage = $filters['per_page'] ?? 50;
+        $page = max(1, $request->integer('page', 1));
+        $paginator = new LengthAwarePaginator(
+            $items->forPage($page, $perPage)->values(),
+            $items->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
+
+        return response()->json(['data' => $paginator]);
     }
 
     public function sync(Request $request, WhatsappSession $session, MetaWhatsappTemplateService $templates, AuditLogger $audit): JsonResponse
@@ -43,11 +53,11 @@ class WhatsappTemplateController extends Controller
         $workspace = $this->workspace($request);
         $this->assertSession($session, $workspace->id);
         $synced = $templates->sync($session);
-        $audit->log('api.whatsapp_template.synced', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, metadata: ['received' => $synced->count()], request: $request);
+        $audit->log('api.whatsapp_template.refreshed', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, metadata: ['received' => $synced->count()], request: $request);
 
         return response()->json([
-            'message' => 'Templates synchronized from Meta.',
-            'data' => $session->messageTemplates()->latest('updated_at')->get(),
+            'message' => 'Templates fetched directly from Meta. No template cache was written.',
+            'data' => $synced,
         ]);
     }
 
@@ -56,17 +66,17 @@ class WhatsappTemplateController extends Controller
         $workspace = $this->workspace($request);
         $this->assertSession($session, $workspace->id);
         $template = $templates->create($session, $request->validate($templates->rules()));
-        $audit->log('api.whatsapp_template.created', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $template, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
+        $audit->log('api.whatsapp_template.created', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
 
         return response()->json(['data' => $template], 201);
     }
 
-    public function update(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template, MetaWhatsappTemplateService $templates, AuditLogger $audit): JsonResponse
+    public function update(Request $request, WhatsappSession $session, string $template, MetaWhatsappTemplateService $templates, AuditLogger $audit): JsonResponse
     {
         $workspace = $this->workspace($request);
         $this->assertSession($session, $workspace->id);
         $template = $templates->update($session, $template, $request->validate($templates->rules(true)));
-        $audit->log('api.whatsapp_template.updated', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $template, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
+        $audit->log('api.whatsapp_template.updated', $workspace, apiKey: $request->attributes->get('apiKey'), auditable: $session, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
 
         return response()->json(['data' => $template]);
     }

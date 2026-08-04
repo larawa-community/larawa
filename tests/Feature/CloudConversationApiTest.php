@@ -79,25 +79,27 @@ class CloudConversationApiTest extends TestCase
             ->assertJsonPath('data.wa_message_id', 'wamid.reply');
     }
 
-    public function test_approved_cached_template_can_be_sent_when_the_window_is_closed(): void
+    public function test_approved_live_meta_template_can_be_sent_when_the_window_is_closed(): void
     {
         [$workspace, $session, $conversation] = $this->cloudConversation();
         $conversation->update(['service_window_expires_at' => now()->subMinute()]);
-        $template = $session->cloudConfig->messageTemplates()->create([
-            'meta_template_id' => 'meta-welcome',
+        $template = [
+            'id' => '983328304742817',
             'name' => 'welcome_customer',
             'language' => 'en_US',
             'category' => 'UTILITY',
             'components' => [['type' => 'BODY', 'text' => 'Welcome {{1}}']],
             'status' => 'APPROVED',
-            'is_active' => true,
-        ]);
+        ];
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Send', ['messages:send']);
-        Http::fake(['*/messages' => Http::response(['messages' => [['id' => 'wamid.template']]])]);
+        Http::fake([
+            '*/waba-1/message_templates*' => Http::response(['data' => [$template]]),
+            '*/messages' => Http::response(['messages' => [['id' => 'wamid.template']]]),
+        ]);
 
         $this->withToken($key)
             ->postJson("/api/v1/sessions/{$session->uuid}/conversations/{$conversation->id}/messages/template", [
-                'template_id' => $template->id,
+                'template_id' => $template['id'],
                 'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'Ada']]]],
             ])
             ->assertAccepted()

@@ -145,8 +145,8 @@ Session `Stop`/`POST /api/v1/sessions/{session}/disconnect` unregisters the acti
 - `sessions:write`: create/delete sessions.
 - `messages:read`: list message logs.
 - `messages:send`: send text, media, reactions, and bulk messages.
-- `templates:read`: list the locally cached Meta template catalog.
-- `templates:write`: synchronize, create, and edit Meta templates.
+- `templates:read`: fetch the Meta template catalog directly from Graph API.
+- `templates:write`: refresh, create, and edit Meta templates.
 - `webhooks:read`: list webhooks.
 - `webhooks:write`: create, update, delete, test, retry, and rotate webhook secrets.
 - `api-keys:read`: list API keys through the REST API.
@@ -228,7 +228,7 @@ After Meta accepts the callback URL and generated token, enter the WABA ID, phon
 
 The access token and phone number ID authorize and address Graph API message sends. The Meta App Secret is not sent to the `/messages` endpoint; LaraWA uses it locally to validate the `X-Hub-Signature-256` attached to webhook requests. Find the App Secret in **Meta App Dashboard → App settings → Basic**. It belongs to the Meta app, while LaraWA stores an encrypted copy on each Official session so callbacks remain session-scoped.
 
-Template management requires a system-user access token with `whatsapp_business_management`; message sends require `whatsapp_business_messaging`. Synchronization is explicit and follows every Meta result page. Cached templates that disappear remotely are retained as inactive so operational history is not destroyed. Creating or editing a template submits it for Meta review, and LaraWA caches statuses such as `PENDING`, `APPROVED`, `REJECTED`, `PAUSED`, and `DISABLED` without changing the Cloud session's connection state when template-management permission is missing.
+Template management requires a system-user access token with `whatsapp_business_management`; message sends require `whatsapp_business_messaging`. Template listing and detail pages fetch every result page directly from Meta and use the numeric Meta template ID in dashboard and API URLs. LaraWA does not write template responses to its local template table. The existing table is retained only as a non-destructive legacy schema artifact. Creating or editing a template submits it to Meta and returns the live response without changing the Cloud session's connection state when template-management permission is missing. The legacy `POST .../templates/sync` API route remains compatible but now performs a direct refresh without persisting template data.
 
 Text-header templates do not need an App ID. Image, video, and document header templates require sample media for Meta review, so configure the numeric Meta App ID on that Cloud session before creating them. LaraWA uploads the supplied sample through Meta's resumable upload API and stores only the returned handle in the template definition. Template names and languages cannot be edited; create a separate template when either must change. Remote template deletion and advanced Authentication, catalog, carousel, Flow, and location templates are not supported in this release.
 

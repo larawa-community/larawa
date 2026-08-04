@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers\Dashboard;
 
+use App\Data\MetaWhatsappTemplate;
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappConversation;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
+use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +16,8 @@ use Illuminate\View\View;
 
 class CloudConversationController extends Controller
 {
+    public function __construct(private readonly MetaWhatsappTemplateService $metaTemplates) {}
+
     public function index(Request $request, WhatsappSession $session): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-conversations.view');
@@ -98,11 +101,11 @@ class CloudConversationController extends Controller
         $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
         $this->assertConversationBelongsToSession($conversation, $session);
         $data = $request->validate([
-            'template_id' => ['required', 'integer'],
+            'template_id' => ['required', 'string', 'regex:/^\d+$/'],
             'parameters' => ['nullable', 'array'],
             'parameters.*' => ['nullable', 'string', 'max:4096'],
         ]);
-        $template = $this->approvedTemplate($session, (int) $data['template_id']);
+        $template = $this->approvedTemplate($session, $data['template_id']);
         $components = CloudTemplateController::sendComponents($template, $data['parameters'] ?? []);
 
         $result = $sender->send($workspace, $session, array_filter([
@@ -118,7 +121,7 @@ class CloudConversationController extends Controller
             $workspace,
             $request->user(),
             auditable: $result->message,
-            metadata: ['conversation_id' => $conversation->id, 'template_id' => $template->id],
+            metadata: ['conversation_id' => $conversation->id, 'meta_template_id' => $template->meta_template_id],
             request: $request,
         );
 
@@ -140,6 +143,17 @@ class CloudConversationController extends Controller
             ? $selected->messages()->oldest('created_at')->limit(200)->get()
             : collect();
 
+        try {
+            $approvedTemplates = $this->metaTemplates->all($session)
+                ->where('status', 'APPROVED')
+                ->where('is_active', true)
+                ->values();
+            $templateLoadError = null;
+        } catch (ValidationException $exception) {
+            $approvedTemplates = collect();
+            $templateLoadError = $exception->errors()['meta'][0] ?? $exception->getMessage();
+        }
+
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
             'session' => $session,
@@ -147,11 +161,8 @@ class CloudConversationController extends Controller
             'conversations' => $conversations,
             'selectedConversation' => $selected,
             'conversationMessages' => $messages,
-            'approvedTemplates' => $session->messageTemplates()
-                ->where('status', 'APPROVED')
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(),
+            'approvedTemplates' => $approvedTemplates,
+            'templateLoadError' => $templateLoadError,
             'canManageSessions' => $request->user()->can('sessions.manage', $session->workspace),
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
         ]);
@@ -176,12 +187,11 @@ class CloudConversationController extends Controller
         );
     }
 
-    private function approvedTemplate(WhatsappSession $session, int $templateId): WhatsappMessageTemplate
+    private function approvedTemplate(WhatsappSession $session, string $templateId): MetaWhatsappTemplate
     {
-        return $session->messageTemplates()
-            ->whereKey($templateId)
-            ->where('status', 'APPROVED')
-            ->where('is_active', true)
-            ->firstOrFail();
+        $template = $this->metaTemplates->find($session, $templateId);
+        abort_unless($template->status === 'APPROVED' && $template->is_active, 404);
+
+        return $template;
     }
 }

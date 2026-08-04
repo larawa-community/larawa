@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
+use App\Data\MetaWhatsappTemplate;
 use App\Models\WhatsappCloudConfig;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -49,8 +48,8 @@ class MetaWhatsappTemplateService
         ]);
     }
 
-    /** @return Collection<int, WhatsappMessageTemplate> */
-    public function sync(WhatsappSession $session): Collection
+    /** @return Collection<int, MetaWhatsappTemplate> */
+    public function all(WhatsappSession $session): Collection
     {
         $config = $this->configuration($session);
         $templates = [];
@@ -75,42 +74,30 @@ class MetaWhatsappTemplateService
             }
         } while (filled($next));
 
-        $now = now();
-
-        return DB::transaction(function () use ($config, $templates, $now): Collection {
-            $remoteIds = [];
-            $cached = collect();
-            foreach ($templates as $remote) {
-                $remoteIds[] = (string) $remote['id'];
-                $template = $config->messageTemplates()
-                    ->where(function ($query) use ($remote): void {
-                        $query->where('meta_template_id', (string) $remote['id'])
-                            ->orWhere(function ($identity) use ($remote): void {
-                                $identity->where('name', $remote['name'] ?? '')
-                                    ->where('language', $remote['language'] ?? '');
-                            });
-                    })
-                    ->first() ?? $config->messageTemplates()->make();
-                $template->fill(array_merge(
-                    ['meta_template_id' => (string) $remote['id']],
-                    $this->remoteAttributes($remote, $now),
-                ))->save();
-                $cached->push($template);
-            }
-
-            $missing = $config->messageTemplates()->where('is_active', true);
-            if ($remoteIds !== []) {
-                $missing->where(function ($query) use ($remoteIds): void {
-                    $query->whereNull('meta_template_id')->orWhereNotIn('meta_template_id', $remoteIds);
-                });
-            }
-            $missing->update(['is_active' => false, 'last_synced_at' => $now]);
-
-            return $cached;
-        });
+        return collect($templates)
+            ->map(fn (array $remote) => $this->remoteTemplate($remote))
+            ->sortBy([['name', 'asc'], ['language', 'asc']])
+            ->values();
     }
 
-    public function create(WhatsappSession $session, array $payload): WhatsappMessageTemplate
+    /** Backward-compatible live refresh; no template data is cached. */
+    public function sync(WhatsappSession $session): Collection
+    {
+        return $this->all($session);
+    }
+
+    public function find(WhatsappSession $session, string $metaTemplateId): MetaWhatsappTemplate
+    {
+        if (! preg_match('/^\d+$/', $metaTemplateId)) {
+            abort(404);
+        }
+
+        return $this->all($session)
+            ->first(fn (MetaWhatsappTemplate $template) => $template->meta_template_id === $metaTemplateId)
+            ?? abort(404);
+    }
+
+    public function create(WhatsappSession $session, array $payload): MetaWhatsappTemplate
     {
         $config = $this->configuration($session);
         $components = $this->buildComponents($config, $payload);
@@ -127,29 +114,21 @@ class MetaWhatsappTemplateService
             throw ValidationException::withMessages(['meta' => 'Meta accepted the request without returning a template ID.']);
         }
 
-        return $config->messageTemplates()->updateOrCreate(
-            ['name' => $payload['name'], 'language' => $payload['language']],
-            [
-                'meta_template_id' => (string) $result['id'],
-                'category' => $result['category'] ?? $payload['category'],
-                'parameter_format' => $payload['parameter_format'] ?? null,
-                'components' => $components,
-                'status' => $result['status'] ?? 'PENDING',
-                'quality_score' => $this->qualityScore($result['quality_score'] ?? null),
-                'rejection_reason' => $this->nullableMetaValue($result['rejected_reason'] ?? null),
-                'last_synced_at' => now(),
-                'is_active' => true,
-            ],
-        );
+        return $this->remoteTemplate(array_merge($result, [
+            'id' => (string) $result['id'],
+            'name' => $payload['name'],
+            'language' => $payload['language'],
+            'category' => $result['category'] ?? $payload['category'],
+            'parameter_format' => $payload['parameter_format'] ?? null,
+            'components' => $components,
+            'status' => $result['status'] ?? 'PENDING',
+        ]));
     }
 
-    public function update(WhatsappSession $session, WhatsappMessageTemplate $template, array $payload): WhatsappMessageTemplate
+    public function update(WhatsappSession $session, string $metaTemplateId, array $payload): MetaWhatsappTemplate
     {
         $config = $this->configuration($session);
-        $this->assertTemplateOwnership($config, $template);
-        if (! filled($template->meta_template_id)) {
-            throw ValidationException::withMessages(['template' => 'This cached template has no Meta template ID and cannot be edited.']);
-        }
+        $template = $this->find($session, $metaTemplateId);
 
         $hasComponentChanges = collect(['header', 'body', 'footer', 'buttons'])->contains(fn ($key) => array_key_exists($key, $payload));
         if ($hasComponentChanges && ! isset($payload['body'])) {
@@ -166,20 +145,17 @@ class MetaWhatsappTemplateService
             throw ValidationException::withMessages(['template' => 'Provide a category or complete template components to edit.']);
         }
 
-        $result = $this->request(fn () => $this->http($config)->post($this->url($template->meta_template_id), $request)->throw()->json());
+        $result = $this->request(fn () => $this->http($config)->post($this->url($metaTemplateId), $request)->throw()->json());
 
-        $template->update(array_filter([
+        return $this->remoteTemplate(array_merge($template->toArray(), array_filter([
+            'id' => $metaTemplateId,
             'category' => $payload['category'] ?? null,
             'parameter_format' => $payload['parameter_format'] ?? null,
             'components' => $components,
             'status' => $result['status'] ?? 'PENDING',
             'quality_score' => $this->qualityScore($result['quality_score'] ?? null),
             'rejection_reason' => $this->nullableMetaValue($result['rejected_reason'] ?? null),
-            'last_synced_at' => now(),
-            'is_active' => true,
-        ], fn ($value) => $value !== null));
-
-        return $template->fresh();
+        ], fn ($value) => $value !== null)));
     }
 
     private function configuration(WhatsappSession $session): WhatsappCloudConfig
@@ -194,13 +170,6 @@ class MetaWhatsappTemplateService
         }
 
         return $config;
-    }
-
-    private function assertTemplateOwnership(WhatsappCloudConfig $config, WhatsappMessageTemplate $template): void
-    {
-        if ($template->whatsapp_cloud_config_id !== $config->id) {
-            abort(404);
-        }
     }
 
     private function buildComponents(WhatsappCloudConfig $config, array $payload): array
@@ -317,12 +286,20 @@ class MetaWhatsappTemplateService
             'components' => $remote['components'] ?? [],
             'status' => $remote['status'] ?? 'PENDING',
             'quality_score' => $this->qualityScore($remote['quality_score'] ?? null),
-            'rejection_reason' => $this->nullableMetaValue($remote['rejected_reason'] ?? null),
+            'rejection_reason' => $this->nullableMetaValue($remote['rejected_reason'] ?? $remote['rejection_reason'] ?? null),
             'remote_created_at' => $remote['created_time'] ?? null,
             'remote_updated_at' => $remote['last_updated_time'] ?? null,
             'last_synced_at' => $syncedAt,
             'is_active' => true,
         ];
+    }
+
+    private function remoteTemplate(array $remote): MetaWhatsappTemplate
+    {
+        return new MetaWhatsappTemplate(array_merge(
+            ['meta_template_id' => (string) ($remote['id'] ?? $remote['meta_template_id'] ?? '')],
+            $this->remoteAttributes($remote, now()),
+        ));
     }
 
     private function qualityScore(mixed $quality): ?string

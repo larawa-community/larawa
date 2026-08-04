@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
 use App\Services\MessageSendResult;
+use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -81,19 +82,17 @@ class CloudConversationController extends Controller
         WhatsappConversation $conversation,
         MessageSender $sender,
         AuditLogger $audit,
+        MetaWhatsappTemplateService $templates,
     ): JsonResponse {
         $workspace = $this->assertSession($request, $session);
         $this->assertConversation($session, $conversation);
         $data = $request->validate([
-            'template_id' => ['required', 'integer'],
+            'template_id' => ['required', 'string', 'regex:/^\d+$/'],
             'components' => ['nullable', 'array'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
-        $template = $session->messageTemplates()
-            ->whereKey($data['template_id'])
-            ->where('status', 'APPROVED')
-            ->where('is_active', true)
-            ->firstOrFail();
+        $template = $templates->find($session, $data['template_id']);
+        abort_unless($template->status === 'APPROVED' && $template->is_active, 404);
         $result = $sender->send($workspace, $session, array_filter([
             'type' => 'template',
             'to' => $conversation->customer_wa_id,
@@ -108,7 +107,7 @@ class CloudConversationController extends Controller
             $workspace,
             apiKey: $request->attributes->get('apiKey'),
             auditable: $result->message,
-            metadata: ['conversation_id' => $conversation->id, 'template_id' => $template->id],
+            metadata: ['conversation_id' => $conversation->id, 'meta_template_id' => $template->meta_template_id],
             request: $request,
         );
 

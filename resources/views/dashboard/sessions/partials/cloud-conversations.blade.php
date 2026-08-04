@@ -100,7 +100,7 @@
                                 @foreach ($approvedTemplates as $template)
                                     <form method="POST" action="{{ route('dashboard.sessions.conversations.messages.template', [$session, $selectedConversation]) }}" class="rounded-lg border border-slate-200 bg-white p-4">
                                         @csrf
-                                        <input type="hidden" name="template_id" value="{{ $template->id }}">
+                                        <input type="hidden" name="template_id" value="{{ $template->meta_template_id }}">
                                         <div class="flex flex-wrap items-center justify-between gap-2">
                                             <div>
                                                 <div class="text-sm font-semibold">{{ $template->name }}</div>
@@ -125,7 +125,7 @@
                             </div>
                         </details>
                     @else
-                        <p class="mt-3 text-xs text-slate-500">No approved templates are cached. Ask a workspace admin to synchronize templates with Meta.</p>
+                        <p class="mt-3 text-xs {{ $templateLoadError ? 'text-red-600' : 'text-slate-500' }}">{{ $templateLoadError ?: 'Meta did not return any approved templates.' }}</p>
                     @endif
                 </footer>
             @else

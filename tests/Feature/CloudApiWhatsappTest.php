@@ -90,7 +90,7 @@ class CloudApiWhatsappTest extends TestCase
         $admin = User::factory()->create();
         $workspace->users()->attach($admin, ['role' => 'workspace_admin']);
         $cloud = $this->cloudSession($workspace);
-        Http::fake();
+        Http::fake(['*/waba-1/message_templates*' => Http::response(['data' => []])]);
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -99,7 +99,8 @@ class CloudApiWhatsappTest extends TestCase
             ->assertDontSee('data-session-live-url', false)
             ->assertDontSee('data-auto-refresh-ms', false);
 
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/waba-1/message_templates'));
     }
 
     public function test_cloud_transport_sends_text_templates_reactions_and_media_links(): void

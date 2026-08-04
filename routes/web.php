@@ -120,7 +120,6 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::post('/sessions/{session}/conversations/{conversation}/messages/template', [CloudConversationController::class, 'sendTemplate'])->name('.sessions.conversations.messages.template');
         Route::get('/sessions/{session}/templates', [CloudTemplateController::class, 'index'])->name('.sessions.templates.index');
         Route::get('/sessions/{session}/templates/create', [CloudTemplateController::class, 'create'])->name('.sessions.templates.create');
-        Route::post('/sessions/{session}/templates/sync', [CloudTemplateController::class, 'sync'])->name('.sessions.templates.sync');
         Route::post('/sessions/{session}/templates', [CloudTemplateController::class, 'store'])->name('.sessions.templates.store');
         Route::get('/sessions/{session}/templates/{template}', [CloudTemplateController::class, 'show'])->name('.sessions.templates.show');
         Route::get('/sessions/{session}/templates/{template}/edit', [CloudTemplateController::class, 'edit'])->name('.sessions.templates.edit');

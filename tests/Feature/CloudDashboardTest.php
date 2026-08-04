@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsappConversation;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,7 +15,7 @@ class CloudDashboardTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_cloud_session_opens_manual_refresh_conversation_workspace_without_worker_polling(): void
+    public function test_cloud_session_opens_conversation_workspace_without_worker_polling_and_fetches_templates_live(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
         $conversation = WhatsappConversation::create([
@@ -39,7 +38,7 @@ class CloudDashboardTest extends TestCase
             'from' => $conversation->customer_wa_id,
             'body' => 'Can you help with my order?',
         ]);
-        Http::fake();
+        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => []])]);
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -56,7 +55,8 @@ class CloudDashboardTest extends TestCase
             ->assertDontSee('data-session-live-url', false)
             ->assertDontSee('Live WhatsApp Discovery');
 
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/waba-dashboard/message_templates'));
     }
 
     public function test_workspace_user_can_reply_but_cannot_manage_templates(): void
@@ -67,6 +67,7 @@ class CloudDashboardTest extends TestCase
             'https://graph.facebook.com/v25.0/phone-dashboard/messages' => Http::response([
                 'messages' => [['id' => 'wamid.dashboard.reply']],
             ]),
+            'https://graph.facebook.com/v25.0/waba-dashboard/message_templates*' => Http::response(['data' => []]),
         ]);
 
         $this->actingAs($user)
@@ -93,7 +94,7 @@ class CloudDashboardTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->post(route('dashboard.sessions.templates.sync', $session))
+            ->get(route('dashboard.sessions.templates.create', $session))
             ->assertForbidden();
     }
 
@@ -101,7 +102,7 @@ class CloudDashboardTest extends TestCase
     {
         [$workspace, $session, $user] = $this->cloudSession('workspace_user');
         $conversation = $this->conversation($workspace, $session, now()->subMinute());
-        Http::fake();
+        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => []])]);
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
@@ -118,16 +119,16 @@ class CloudDashboardTest extends TestCase
             ])
             ->assertSessionHasErrors('text');
 
-        Http::assertNothingSent();
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/messages'));
         $this->assertDatabaseMissing('messages', ['body' => 'This must not send.']);
     }
 
-    public function test_template_sync_is_explicit_and_surfaces_cached_review_state(): void
+    public function test_template_listing_fetches_meta_directly_and_surfaces_review_state(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
         Http::fake(fn () => Http::response([
             'data' => [[
-                'id' => 'meta-template-1',
+                'id' => '983328304742813',
                 'name' => 'order_update',
                 'status' => 'REJECTED',
                 'category' => 'UTILITY',
@@ -142,46 +143,33 @@ class CloudDashboardTest extends TestCase
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->get(route('dashboard.sessions.templates.index', $session))
             ->assertOk()
-            ->assertSee('Sync with Meta');
-
-        Http::assertNothingSent();
-        $this->actingAs($admin)
-            ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->post(route('dashboard.sessions.templates.sync', $session))
-            ->assertRedirect()
-            ->assertSessionHas('status', '1 templates synchronized with Meta.');
-
-        $this->actingAs($admin)
-            ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->get(route('dashboard.sessions.templates.index', $session))
-            ->assertOk()
+            ->assertSee('Refresh from Meta')
             ->assertSee('order_update')
             ->assertSee('REJECTED');
 
-        $template = $session->messageTemplates()->where('name', 'order_update')->firstOrFail();
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->get(route('dashboard.sessions.templates.show', [$session, '983328304742813']))
             ->assertOk()
             ->assertSee('Body is too vague.');
+
+        $this->assertDatabaseCount('whatsapp_message_templates', 0);
     }
 
     public function test_approved_template_composer_sends_generated_body_parameters(): void
     {
         [$workspace, $session, $user] = $this->cloudSession('workspace_user');
-        $template = WhatsappMessageTemplate::create([
-            'whatsapp_cloud_config_id' => $session->cloudConfig->id,
-            'meta_template_id' => 'meta-approved-1',
+        $template = [
+            'id' => '983328304742814',
             'name' => 'order_ready',
             'language' => 'en_US',
             'category' => 'UTILITY',
             'parameter_format' => 'POSITIONAL',
             'components' => [['type' => 'BODY', 'text' => 'Hello {{1}}, order {{2}} is ready.']],
             'status' => 'APPROVED',
-            'last_synced_at' => now(),
-            'is_active' => true,
-        ]);
+        ];
         Http::fake([
+            'https://graph.facebook.com/v25.0/waba-dashboard/message_templates*' => Http::response(['data' => [$template]]),
             'https://graph.facebook.com/v25.0/phone-dashboard/messages' => Http::response([
                 'messages' => [['id' => 'wamid.dashboard.template']],
             ]),
@@ -191,19 +179,19 @@ class CloudDashboardTest extends TestCase
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->get(route('dashboard.sessions.templates.index', $session))
             ->assertOk()
-            ->assertSee(route('dashboard.sessions.templates.show', [$session, $template]), false)
+            ->assertSee(route('dashboard.sessions.templates.show', [$session, $template['id']]), false)
             ->assertDontSee('Body value 1');
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->get(route('dashboard.sessions.templates.show', [$session, $template['id']]))
             ->assertOk()
             ->assertSee('Body value 1')
             ->assertSee('Body value 2');
 
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->post(route('dashboard.sessions.templates.send', [$session, $template]), [
+            ->post(route('dashboard.sessions.templates.send', [$session, $template['id']]), [
                 'to' => '819012345678',
                 'parameters' => ['body_1' => 'Aiko', 'body_2' => 'A-123'],
             ])
@@ -218,9 +206,8 @@ class CloudDashboardTest extends TestCase
     public function test_template_detail_explains_status_without_showing_meta_none_as_a_rejection(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
-        $template = WhatsappMessageTemplate::create([
-            'whatsapp_cloud_config_id' => $session->cloudConfig->id,
-            'meta_template_id' => 'meta-approved-none',
+        $template = [
+            'id' => '983328304742815',
             'name' => 'approved_notice',
             'language' => 'en_US',
             'category' => 'UTILITY',
@@ -228,14 +215,13 @@ class CloudDashboardTest extends TestCase
             'components' => [['type' => 'BODY', 'text' => 'Your order is ready.']],
             'status' => 'APPROVED',
             'quality_score' => 'UNKNOWN',
-            'rejection_reason' => 'NONE',
-            'last_synced_at' => now(),
-            'is_active' => true,
-        ]);
+            'rejected_reason' => 'NONE',
+        ];
+        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => [$template]])]);
 
         $this->actingAs($admin)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
-            ->get(route('dashboard.sessions.templates.show', [$session, $template]))
+            ->get(route('dashboard.sessions.templates.show', [$session, $template['id']]))
             ->assertOk()
             ->assertSee('Approved by Meta and ready to send.')
             ->assertSee('Not rated')
@@ -247,21 +233,20 @@ class CloudDashboardTest extends TestCase
     public function test_create_and_edit_pages_include_a_local_live_preview(): void
     {
         [$workspace, $session, $admin] = $this->cloudSession('workspace_admin');
-        $template = WhatsappMessageTemplate::create([
-            'whatsapp_cloud_config_id' => $session->cloudConfig->id,
-            'meta_template_id' => 'meta-preview',
+        $template = [
+            'id' => '983328304742816',
             'name' => 'preview_notice',
             'language' => 'en_US',
             'category' => 'UTILITY',
             'parameter_format' => 'NAMED',
             'components' => [['type' => 'BODY', 'text' => 'Hello {{customer_name}}.']],
             'status' => 'APPROVED',
-            'is_active' => true,
-        ]);
+        ];
+        Http::fake(['*/waba-dashboard/message_templates*' => Http::response(['data' => [$template]])]);
 
         foreach ([
             route('dashboard.sessions.templates.create', $session),
-            route('dashboard.sessions.templates.edit', [$session, $template]),
+            route('dashboard.sessions.templates.edit', [$session, $template['id']]),
         ] as $url) {
             $this->actingAs($admin)
                 ->withSession(['dashboard_workspace_id' => $workspace->id])

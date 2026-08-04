@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\ApiKeyService;
@@ -16,31 +15,14 @@ class WhatsappTemplateManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_template_sync_follows_pagination_updates_cache_and_marks_missing_templates_inactive(): void
+    public function test_template_refresh_follows_pagination_and_does_not_write_a_local_cache(): void
     {
         [$workspace, $session] = $this->cloudSession();
-        $missing = $session->cloudConfig->messageTemplates()->create([
-            'meta_template_id' => 'old-template',
-            'name' => 'old_template',
-            'language' => 'en_US',
-            'category' => 'UTILITY',
-            'components' => [],
-            'status' => 'APPROVED',
-            'is_active' => true,
-        ]);
-        $missingWithoutRemoteId = $session->cloudConfig->messageTemplates()->create([
-            'name' => 'local_draft',
-            'language' => 'en_US',
-            'category' => 'UTILITY',
-            'components' => [],
-            'status' => 'PENDING',
-            'is_active' => true,
-        ]);
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
         Http::fake([
             'https://graph.facebook.com/v25.0/waba-1/message_templates*' => Http::response([
                 'data' => [[
-                    'id' => 'meta-1',
+                    'id' => '983328304742811',
                     'name' => 'order_update',
                     'language' => 'en_US',
                     'category' => 'UTILITY',
@@ -52,7 +34,7 @@ class WhatsappTemplateManagementTest extends TestCase
             ]),
             'https://graph.facebook.com/v25.0/page-two' => Http::response([
                 'data' => [[
-                    'id' => 'meta-2',
+                    'id' => '983328304742812',
                     'name' => 'sale_notice',
                     'language' => 'en_US',
                     'category' => 'MARKETING',
@@ -65,22 +47,31 @@ class WhatsappTemplateManagementTest extends TestCase
         $this->withToken($key)
             ->postJson("/api/v1/sessions/{$session->uuid}/templates/sync")
             ->assertOk()
-            ->assertJsonCount(4, 'data');
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('message', 'Templates fetched directly from Meta. No template cache was written.');
 
-        $this->assertFalse($missing->fresh()->is_active);
-        $this->assertFalse($missingWithoutRemoteId->fresh()->is_active);
-        $this->assertDatabaseHas('whatsapp_message_templates', ['meta_template_id' => 'meta-1', 'status' => 'APPROVED', 'is_active' => true]);
-        $this->assertDatabaseHas('whatsapp_message_templates', ['meta_template_id' => 'meta-2', 'status' => 'PENDING', 'is_active' => true]);
+        $this->assertDatabaseCount('whatsapp_message_templates', 0);
     }
 
     public function test_api_creates_and_edits_a_guided_template_and_audits_remote_mutations(): void
     {
         [$workspace, $session] = $this->cloudSession();
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
-        Http::fake([
-            'https://graph.facebook.com/v25.0/waba-1/message_templates' => Http::response(['id' => 'meta-created', 'status' => 'PENDING', 'category' => 'UTILITY']),
-            'https://graph.facebook.com/v25.0/meta-created' => Http::response(['success' => true]),
-        ]);
+        $remote = [
+            'id' => '983328304742813',
+            'name' => 'order_confirmation',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'parameter_format' => 'POSITIONAL',
+            'components' => [['type' => 'BODY', 'text' => 'Hello {{1}}']],
+            'status' => 'PENDING',
+        ];
+        Http::fake(fn (Request $request) => match (true) {
+            $request->method() === 'POST' && str_ends_with($request->url(), '/waba-1/message_templates') => Http::response(['id' => $remote['id'], 'status' => 'PENDING', 'category' => 'UTILITY']),
+            $request->method() === 'GET' && str_contains($request->url(), '/waba-1/message_templates') => Http::response(['data' => [$remote]]),
+            $request->method() === 'POST' && str_ends_with($request->url(), '/'.$remote['id']) => Http::response(['success' => true]),
+            default => Http::response([], 404),
+        });
 
         $created = $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
             'name' => 'order_confirmation',
@@ -95,10 +86,9 @@ class WhatsappTemplateManagementTest extends TestCase
                 ['type' => 'URL', 'text' => 'Track order', 'url' => 'https://example.com/orders/{{1}}', 'example' => 'A-123'],
                 ['type' => 'PHONE_NUMBER', 'text' => 'Call us', 'phone_number' => '+15551234567'],
             ],
-        ])->assertCreated()->assertJsonPath('data.meta_template_id', 'meta-created');
+        ])->assertCreated()->assertJsonPath('data.meta_template_id', $remote['id']);
 
-        $templateId = $created->json('data.id');
-        $this->withToken($key)->patchJson("/api/v1/sessions/{$session->uuid}/templates/{$templateId}", [
+        $this->withToken($key)->patchJson("/api/v1/sessions/{$session->uuid}/templates/{$remote['id']}", [
             'category' => 'MARKETING',
         ])->assertOk()->assertJsonPath('data.category', 'MARKETING');
 
@@ -114,17 +104,17 @@ class WhatsappTemplateManagementTest extends TestCase
         $this->assertSame(1, AuditLog::where('action', 'api.whatsapp_template.updated')->count());
     }
 
-    public function test_media_header_upload_uses_app_id_and_caches_the_returned_handle(): void
+    public function test_media_header_upload_uses_app_id_and_returns_the_meta_handle_without_caching(): void
     {
         [$workspace, $session] = $this->cloudSession(['app_id' => 'app-1']);
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
         Http::fake([
             'https://graph.facebook.com/v25.0/app-1/uploads' => Http::response(['id' => 'upload:session-1']),
             'https://graph.facebook.com/v25.0/upload:session-1' => Http::response(['h' => 'sample-handle']),
-            'https://graph.facebook.com/v25.0/waba-1/message_templates' => Http::response(['id' => 'meta-media', 'status' => 'PENDING']),
+            'https://graph.facebook.com/v25.0/waba-1/message_templates' => Http::response(['id' => '983328304742814', 'status' => 'PENDING']),
         ]);
 
-        $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
+        $response = $this->withToken($key)->postJson("/api/v1/sessions/{$session->uuid}/templates", [
             'name' => 'document_notice',
             'language' => 'en_US',
             'category' => 'UTILITY',
@@ -141,8 +131,9 @@ class WhatsappTemplateManagementTest extends TestCase
 
         $this->assertSame(
             ['sample-handle'],
-            WhatsappMessageTemplate::where('meta_template_id', 'meta-media')->firstOrFail()->components[0]['example']['header_handle'],
+            $response->json('data.components.0.example.header_handle'),
         );
+        $this->assertDatabaseCount('whatsapp_message_templates', 0);
     }
 
     public function test_scopes_workspace_ownership_and_meta_errors_are_enforced_without_failing_session(): void
@@ -151,7 +142,9 @@ class WhatsappTemplateManagementTest extends TestCase
         [$otherWorkspace, $otherSession] = $this->cloudSession([], 'Other');
         [, $readKey] = app(ApiKeyService::class)->create($workspace, 'Read', ['templates:read']);
         [, $writeKey] = app(ApiKeyService::class)->create($workspace, 'Write', ['templates:write']);
-        Http::fake(['*' => Http::response(['error' => ['message' => 'Missing management permission', 'code' => 200]], 403)]);
+        Http::fakeSequence()
+            ->push(['data' => []])
+            ->push(['error' => ['message' => 'Missing management permission', 'code' => 200]], 403);
 
         $this->withToken($readKey)->getJson("/api/v1/sessions/{$session->uuid}/templates")->assertOk();
         $this->withToken($readKey)->postJson("/api/v1/sessions/{$session->uuid}/templates/sync")->assertForbidden();

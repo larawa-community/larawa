@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers\Dashboard;
 
+use App\Data\MetaWhatsappTemplate;
 use App\Http\Controllers\Controller;
-use App\Models\WhatsappMessageTemplate;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
 use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -17,6 +18,8 @@ use Illuminate\View\View;
 
 class CloudTemplateController extends Controller
 {
+    public function __construct(private readonly MetaWhatsappTemplateService $metaTemplates) {}
+
     public function index(Request $request, WhatsappSession $session): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-templates.view');
@@ -31,40 +34,18 @@ class CloudTemplateController extends Controller
         return $this->render($request, $session, editorMode: 'create');
     }
 
-    public function show(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template): View
+    public function show(Request $request, WhatsappSession $session, string $template): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-templates.view');
-        $this->assertTemplateBelongsToSession($template, $session);
 
-        return $this->render($request, $session, templateDetail: $template);
+        return $this->render($request, $session, templateDetail: $this->metaTemplates->find($session, $template));
     }
 
-    public function edit(Request $request, WhatsappSession $session, WhatsappMessageTemplate $template): View
+    public function edit(Request $request, WhatsappSession $session, string $template): View
     {
         $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
-        $this->assertTemplateBelongsToSession($template, $session);
 
-        return $this->render($request, $session, $template, 'edit');
-    }
-
-    public function sync(
-        Request $request,
-        WhatsappSession $session,
-        MetaWhatsappTemplateService $templates,
-        AuditLogger $audit,
-    ): RedirectResponse {
-        $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
-        $synced = $templates->sync($session);
-        $audit->log(
-            'cloud_templates.synced',
-            $workspace,
-            $request->user(),
-            auditable: $session,
-            metadata: ['template_count' => $synced->count()],
-            request: $request,
-        );
-
-        return back()->with('status', $synced->count().' templates synchronized with Meta.');
+        return $this->render($request, $session, $this->metaTemplates->find($session, $template), 'edit');
     }
 
     public function store(
@@ -75,37 +56,37 @@ class CloudTemplateController extends Controller
     ): RedirectResponse {
         $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
         $template = $templates->create($session, $this->templatePayload($request, $templates));
-        $audit->log('cloud_template.created', $workspace, $request->user(), auditable: $template, request: $request);
+        $audit->log('cloud_template.created', $workspace, $request->user(), auditable: $session, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
 
-        return redirect()->route('dashboard.sessions.templates.index', $session)
+        return redirect()->route('dashboard.sessions.templates.show', [$session, $template->meta_template_id])
             ->with('status', 'Template submitted to Meta for review.');
     }
 
     public function update(
         Request $request,
         WhatsappSession $session,
-        WhatsappMessageTemplate $template,
+        string $template,
         MetaWhatsappTemplateService $templates,
         AuditLogger $audit,
     ): RedirectResponse {
         $workspace = $this->authorizeCloudSession($request, $session, 'cloud-templates.manage');
-        $this->assertTemplateBelongsToSession($template, $session);
         $template = $templates->update($session, $template, $this->templatePayload($request, $templates, true));
-        $audit->log('cloud_template.updated', $workspace, $request->user(), auditable: $template, request: $request);
+        $audit->log('cloud_template.updated', $workspace, $request->user(), auditable: $session, metadata: ['meta_template_id' => $template->meta_template_id], request: $request);
 
-        return redirect()->route('dashboard.sessions.templates.index', $session)
+        return redirect()->route('dashboard.sessions.templates.show', [$session, $template->meta_template_id])
             ->with('status', 'Template changes submitted to Meta for review.');
     }
 
     public function send(
         Request $request,
         WhatsappSession $session,
-        WhatsappMessageTemplate $template,
+        string $template,
         MessageSender $sender,
         AuditLogger $audit,
+        MetaWhatsappTemplateService $templates,
     ): RedirectResponse {
         $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
-        $this->assertTemplateBelongsToSession($template, $session);
+        $template = $templates->find($session, $template);
         abort_unless($template->status === 'APPROVED' && $template->is_active, 422, 'Only active approved templates can be sent.');
         $data = $request->validate([
             'to' => ['required', 'string', 'max:80'],
@@ -126,7 +107,7 @@ class CloudTemplateController extends Controller
             $workspace,
             $request->user(),
             auditable: $result->message,
-            metadata: ['template_id' => $template->id],
+            metadata: ['meta_template_id' => $template->meta_template_id],
             request: $request,
         );
 
@@ -137,7 +118,7 @@ class CloudTemplateController extends Controller
         return back()->with('status', 'Template message queued for delivery.');
     }
 
-    public static function parameterFields(WhatsappMessageTemplate $template): array
+    public static function parameterFields(MetaWhatsappTemplate $template): array
     {
         $fields = [];
 
@@ -185,7 +166,7 @@ class CloudTemplateController extends Controller
         return $fields;
     }
 
-    public static function sendComponents(WhatsappMessageTemplate $template, array $parameters): array
+    public static function sendComponents(MetaWhatsappTemplate $template, array $parameters): array
     {
         $components = [];
         $body = [];
@@ -230,15 +211,19 @@ class CloudTemplateController extends Controller
     private function render(
         Request $request,
         WhatsappSession $session,
-        ?WhatsappMessageTemplate $editingTemplate = null,
+        ?MetaWhatsappTemplate $editingTemplate = null,
         ?string $editorMode = null,
-        ?WhatsappMessageTemplate $templateDetail = null,
+        ?MetaWhatsappTemplate $templateDetail = null,
     ): View {
+        $templates = $editorMode || $templateDetail
+            ? $this->emptyPaginator($request)
+            : $this->paginate($this->metaTemplates->all($session), $request, 30);
+
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
             'session' => $session,
             'activeSection' => 'templates',
-            'templates' => $session->messageTemplates()->orderBy('name')->orderBy('language')->paginate(30),
+            'templates' => $templates,
             'editingTemplate' => $editingTemplate,
             'editorMode' => $editorMode,
             'templateDetail' => $templateDetail,
@@ -341,8 +326,21 @@ class CloudTemplateController extends Controller
         return $workspace;
     }
 
-    private function assertTemplateBelongsToSession(WhatsappMessageTemplate $template, WhatsappSession $session): void
+    private function paginate($items, Request $request, int $perPage): LengthAwarePaginator
     {
-        abort_unless($template->whatsapp_cloud_config_id === $session->cloudConfig?->id, 404);
+        $page = max(1, $request->integer('page', 1));
+
+        return new LengthAwarePaginator(
+            $items->forPage($page, $perPage)->values(),
+            $items->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
+    }
+
+    private function emptyPaginator(Request $request): LengthAwarePaginator
+    {
+        return new LengthAwarePaginator([], 0, 30, 1, ['path' => $request->url()]);
     }
 }

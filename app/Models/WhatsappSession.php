@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -75,16 +74,6 @@ class WhatsappSession extends Model
     public function cloudConfig(): HasOne
     {
         return $this->hasOne(WhatsappCloudConfig::class);
-    }
-
-    public function messageTemplates(): HasManyThrough
-    {
-        return $this->hasManyThrough(
-            WhatsappMessageTemplate::class,
-            WhatsappCloudConfig::class,
-            'whatsapp_session_id',
-            'whatsapp_cloud_config_id',
-        );
     }
 
     public function fallbackSession(): BelongsTo
