@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
 use App\Services\MessageSendResult;
+use App\Services\MetaWhatsappTemplateMessageBuilder;
 use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -84,30 +85,50 @@ class CloudConversationController extends Controller
         MessageSender $sender,
         AuditLogger $audit,
         MetaWhatsappTemplateService $templates,
+        MetaWhatsappTemplateMessageBuilder $builder,
     ): JsonResponse {
         $workspace = $this->assertSession($request, $session);
         $this->assertConversation($session, $conversation);
         $data = $request->validate([
             'template_id' => ['required', 'string', 'regex:/^\d+$/'],
+            'parameters' => ['nullable', 'array'],
+            'parameters.*' => ['nullable', 'string', 'max:4096'],
             'components' => ['nullable', 'array'],
-            'header_media_type' => ['nullable', 'required_with:media_base64', 'in:image,video,document'],
+            'header_media_type' => ['nullable', 'in:image,video,document'],
             'media_base64' => ['nullable', 'string'],
             'mime_type' => ['nullable', 'required_with:media_base64', 'string', 'max:120'],
             'filename' => ['nullable', 'string', 'max:160'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
+        if (array_key_exists('parameters', $data) && array_key_exists('components', $data)) {
+            throw ValidationException::withMessages(['parameters' => 'Use parameters or components, not both.']);
+        }
         if (filled($data['header_media_type'] ?? null) && ! filled($data['media_base64'] ?? null)) {
             throw ValidationException::withMessages(['media_base64' => 'media_base64 is required with header_media_type.']);
         }
-        $this->assertValidTemplateMedia($data);
         $template = $templates->find($session, $data['template_id']);
         abort_unless($template->status === 'APPROVED' && $template->is_active, 404);
+        $mediaField = collect($builder->parameterSchema($template))->first(
+            fn (array $field) => $field['component'] === 'header' && $field['input'] === 'file'
+        );
+        if ($mediaField && ! filled($data['media_base64'] ?? null)) {
+            throw ValidationException::withMessages(['media_base64' => $mediaField['label'].' is required for this template.']);
+        }
+        if ($mediaField) {
+            $data['header_media_type'] = $mediaField['format'];
+            $this->assertValidTemplateMedia($data);
+        } elseif (filled($data['media_base64'] ?? null)) {
+            throw ValidationException::withMessages(['media_base64' => 'This template does not use a media header.']);
+        }
+        $components = array_key_exists('components', $data)
+            ? $data['components']
+            : $builder->components($template, $data['parameters'] ?? []);
         $result = $sender->send($workspace, $session, array_filter([
             'type' => 'template',
             'to' => $conversation->customer_wa_id,
             'name' => $template->name,
             'language' => $template->language,
-            'components' => $data['components'] ?? null,
+            'components' => $components,
             'header_media_type' => $data['header_media_type'] ?? null,
             'media_base64' => $data['media_base64'] ?? null,
             'mime_type' => $data['mime_type'] ?? null,

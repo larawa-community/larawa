@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
+use App\Services\MetaWhatsappTemplateMessageBuilder;
 use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,6 +59,23 @@ class WhatsappTemplateController extends Controller
         return response()->json([
             'message' => 'Templates fetched directly from Meta. No template cache was written.',
             'data' => $synced,
+        ]);
+    }
+
+    public function show(
+        Request $request,
+        WhatsappSession $session,
+        string $template,
+        MetaWhatsappTemplateService $templates,
+        MetaWhatsappTemplateMessageBuilder $builder,
+    ): JsonResponse {
+        $workspace = $this->workspace($request);
+        $this->assertSession($session, $workspace->id);
+        $template = $templates->find($session, $template);
+
+        return response()->json([
+            'data' => $template,
+            'parameter_schema' => $builder->parameterSchema($template),
         ]);
     }
 

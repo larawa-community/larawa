@@ -131,6 +131,71 @@ class CloudApiWhatsappTest extends TestCase
         Http::assertSent(fn ($request) => $request['type'] === 'image' && $request['image']['link'] === 'https://cdn.example.test/image.jpg');
     }
 
+    public function test_api_sends_an_approved_template_by_id_and_derives_its_language_and_components(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $cloud = $this->cloudSession($workspace);
+        [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Send templates', ['messages:send']);
+        Http::fake([
+            '*/waba-1/message_templates*' => Http::response(['data' => [[
+                'id' => '983328304742819',
+                'name' => 'order_update',
+                'language' => 'ja',
+                'category' => 'UTILITY',
+                'parameter_format' => 'POSITIONAL',
+                'components' => [['type' => 'BODY', 'text' => '{{1}} 様、注文 {{2}} を発送しました。']],
+                'status' => 'APPROVED',
+            ]]]),
+            '*/phone-1/messages' => Http::response(['messages' => [['id' => 'wamid.template-by-id']]]),
+        ]);
+
+        $this->withToken($apiKey)
+            ->postJson("/api/v1/sessions/{$cloud->uuid}/messages/template", [
+                'to' => '+81 90-1234-5678',
+                'template_id' => '983328304742819',
+                'parameters' => [
+                    'body_1' => '太郎',
+                    'body_2' => 'ORD-123',
+                ],
+            ])
+            ->assertAccepted()
+            ->assertJsonPath('data.wa_message_id', 'wamid.template-by-id');
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/phone-1/messages')
+            && $request['template']['name'] === 'order_update'
+            && $request['template']['language']['code'] === 'ja'
+            && $request['template']['components'][0]['parameters'][0]['text'] === '太郎'
+            && $request['template']['components'][0]['parameters'][1]['text'] === 'ORD-123');
+    }
+
+    public function test_template_id_send_validates_required_parameters(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $cloud = $this->cloudSession($workspace);
+        [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Send templates', ['messages:send']);
+        Http::fake([
+            '*/waba-1/message_templates*' => Http::response(['data' => [[
+                'id' => '983328304742820',
+                'name' => 'welcome',
+                'language' => 'en_US',
+                'category' => 'UTILITY',
+                'components' => [['type' => 'BODY', 'text' => 'Welcome {{1}}']],
+                'status' => 'APPROVED',
+            ]]]),
+        ]);
+
+        $this->withToken($apiKey)
+            ->postJson("/api/v1/sessions/{$cloud->uuid}/messages/template", [
+                'to' => '+1 555 123 4567',
+                'template_id' => '983328304742820',
+                'parameters' => [],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('parameters.body_1');
+
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/phone-1/messages'));
+    }
+
     public function test_wrapper_definitive_failure_falls_back_to_linked_cloud_session(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);

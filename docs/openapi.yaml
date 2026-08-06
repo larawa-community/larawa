@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: LaraWA API
-  version: 13.1.0
+  version: 13.2.0
   description: Self-hosted WhatsApp API gateway supporting workspace-enabled Meta Official Cloud API and whatsapp-web.js Wrapper transports.
 servers:
   - url: http://localhost:8080/api/v1
@@ -163,6 +163,20 @@ components:
         rejection_reason: { type: [string, "null"] }
         last_synced_at: { type: [string, "null"], format: date-time }
         is_active: { type: boolean }
+    WhatsappTemplateParameterField:
+      type: object
+      required: [key, label, component, input, required]
+      description: A client-renderable input required to send this template. Submit text values under `parameters.<key>`; file inputs use `media_base64` and `mime_type`.
+      properties:
+        key: { type: string, example: body_1 }
+        label: { type: string, example: Body value 1 }
+        component: { type: string, enum: [header, body, button] }
+        input: { type: string, enum: [text, file] }
+        required: { type: boolean }
+        format: { type: string, enum: [text, image, video, document] }
+        variable: { type: string, example: "1" }
+        parameter_name: { type: [string, "null"] }
+        index: { type: integer }
     WhatsappTemplateInput:
       type: object
       required: [name, language, category]
@@ -753,7 +767,7 @@ paths:
   /sessions/{session}/messages/template:
     post:
       summary: Send an Official Cloud API template message
-      description: Requires `messages:send` and an Official Cloud API session. Use templates when Meta does not permit a free-form customer-service message.
+      description: Requires `messages:send` and an Official Cloud API session. Prefer `template_id` plus the keys returned by the template detail endpoint. LaraWA verifies that the live Meta template is active and approved, derives its name and language, validates required parameters, and builds Meta components. The legacy `name` + `language` + `components` payload remains supported for compatibility.
       parameters:
         - name: session
           in: path
@@ -765,14 +779,23 @@ paths:
           application/json:
             schema:
               type: object
-              required: [to, name, language]
+              required: [to]
+              anyOf:
+                - required: [template_id]
+                - required: [name, language]
               properties:
                 to: { type: string, example: "+1 202-555-0100" }
-                name: { type: string, example: order_update }
-                language: { type: string, example: en_US }
-                components: { type: array, items: { type: object } }
-                header_media_type: { type: string, enum: [image, video, document], description: Required with media_base64. LaraWA uploads the decoded file to Meta and inserts the returned media ID into the template header. }
-                media_base64: { type: string, format: byte, description: Base64-encoded template header media; no public URL is required. }
+                template_id: { type: string, pattern: "^[0-9]+$", example: "983328304742813", description: Preferred. Numeric Meta template ID from the list/detail APIs. }
+                parameters:
+                  type: object
+                  additionalProperties: { type: string }
+                  example: { body_1: Ada, body_2: ORD-123 }
+                  description: Values keyed by `parameter_schema[].key`. Do not combine with components.
+                name: { type: string, example: order_update, deprecated: true, description: Legacy mode only. }
+                language: { type: string, example: en_US, deprecated: true, description: Legacy mode only; derived automatically with template_id. }
+                components: { type: array, items: { type: object }, description: Advanced/legacy raw Meta components. Do not combine with parameters. }
+                header_media_type: { type: string, enum: [image, video, document], description: Legacy mode requires this with media_base64. With template_id, LaraWA derives it from the template. }
+                media_base64: { type: string, format: byte, description: Base64-encoded template header media. Required when parameter_schema contains a required file input. }
                 mime_type: { type: string, example: image/jpeg, description: Required with media_base64 and must match header_media_type. }
                 filename: { type: string, example: invitation.jpg }
                 idempotency_key: { type: string }
@@ -836,9 +859,13 @@ paths:
               required: [template_id]
               properties:
                 template_id: { type: string, pattern: "^[0-9]+$", example: "983328304742813", description: Numeric Meta template ID. }
-                components: { type: array, items: { type: object } }
-                header_media_type: { type: string, enum: [image, video, document], description: Required with media_base64. LaraWA uploads the decoded file to Meta and inserts the returned media ID into the template header. }
-                media_base64: { type: string, format: byte, description: Base64-encoded template header media; no public URL is required. }
+                parameters:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: Values keyed by `parameter_schema[].key`. Do not combine with components.
+                components: { type: array, items: { type: object }, description: Advanced raw Meta components. Do not combine with parameters. }
+                header_media_type: { type: string, enum: [image, video, document], description: Optional; LaraWA derives it from the selected template. }
+                media_base64: { type: string, format: byte, description: Base64-encoded template header media. Required when the selected template has a media header. }
                 mime_type: { type: string, example: image/jpeg, description: Required with media_base64 and must match header_media_type. }
                 filename: { type: string, example: invitation.jpg }
                 idempotency_key: { type: string, maxLength: 120 }
@@ -882,6 +909,27 @@ paths:
         "200": { description: Live Meta template catalog }
         "422": { description: Cloud credentials are incomplete or Meta rejected the operation }
   /sessions/{session}/templates/{template}:
+    get:
+      summary: Get a live Meta template and its form schema
+      description: Requires `templates:read`. Fetches the live template catalog from Meta, selects the numeric template ID, and returns both the original template structure and a normalized `parameter_schema` suitable for generating a send form.
+      parameters:
+        - { name: session, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: template, in: path, required: true, schema: { type: string, pattern: "^[0-9]+$", example: "983328304742813" } }
+      responses:
+        "200":
+          description: Live template and client-renderable parameter schema
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, parameter_schema]
+                properties:
+                  data: { $ref: "#/components/schemas/WhatsappMessageTemplate" }
+                  parameter_schema:
+                    type: array
+                    items: { $ref: "#/components/schemas/WhatsappTemplateParameterField" }
+        "404": { description: Template does not exist in this session's live Meta catalog }
+        "422": { description: Cloud credentials are incomplete or Meta rejected the operation }
     patch:
       summary: Edit a Meta message template
       description: Requires `templates:write`. The path value is the numeric Meta template ID. Template name and language are immutable. Send the complete body whenever changing components; Meta review restrictions still apply.

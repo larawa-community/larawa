@@ -15,6 +15,38 @@ class WhatsappTemplateManagementTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_api_returns_one_live_template_with_a_form_parameter_schema(): void
+    {
+        [$workspace, $session] = $this->cloudSession();
+        [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:read']);
+        Http::fake([
+            '*/waba-1/message_templates*' => Http::response(['data' => [[
+                'id' => '983328304742810',
+                'name' => 'order_update',
+                'language' => 'en_US',
+                'category' => 'UTILITY',
+                'parameter_format' => 'POSITIONAL',
+                'components' => [
+                    ['type' => 'HEADER', 'format' => 'TEXT', 'text' => 'Update for {{1}}'],
+                    ['type' => 'BODY', 'text' => 'Hello {{1}}, order {{2}} is ready.'],
+                    ['type' => 'BUTTONS', 'buttons' => [['type' => 'URL', 'text' => 'Track', 'url' => 'https://example.test/{{1}}']]],
+                ],
+                'status' => 'APPROVED',
+            ]]]),
+        ]);
+
+        $this->withToken($key)
+            ->getJson("/api/v1/sessions/{$session->uuid}/templates/983328304742810")
+            ->assertOk()
+            ->assertJsonPath('data.language', 'en_US')
+            ->assertJsonPath('data.components.1.text', 'Hello {{1}}, order {{2}} is ready.')
+            ->assertJsonPath('parameter_schema.0.key', 'header')
+            ->assertJsonPath('parameter_schema.1.key', 'body_1')
+            ->assertJsonPath('parameter_schema.2.key', 'body_2')
+            ->assertJsonPath('parameter_schema.3.key', 'button_0')
+            ->assertJsonPath('parameter_schema.3.required', true);
+    }
+
     public function test_template_refresh_follows_pagination_and_does_not_write_a_local_cache(): void
     {
         [$workspace, $session] = $this->cloudSession();

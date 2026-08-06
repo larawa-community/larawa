@@ -10,6 +10,8 @@ use App\Services\AuditLogger;
 use App\Services\MessageLogQuery;
 use App\Services\MessageSender;
 use App\Services\MessageSendResult;
+use App\Services\MetaWhatsappTemplateMessageBuilder;
+use App\Services\MetaWhatsappTemplateService;
 use App\Services\OutboundUrlGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -102,28 +104,68 @@ class MessageController extends Controller
         ]);
     }
 
-    public function sendTemplate(Request $request, WhatsappSession $session, MessageSender $sender, AuditLogger $audit): JsonResponse
-    {
+    public function sendTemplate(
+        Request $request,
+        WhatsappSession $session,
+        MessageSender $sender,
+        AuditLogger $audit,
+        MetaWhatsappTemplateService $templates,
+        MetaWhatsappTemplateMessageBuilder $builder,
+    ): JsonResponse {
+        $workspace = $this->workspace($request);
+        $this->assertSessionAllowed($workspace, $session);
         if (! $session->isCloudApi()) {
             return response()->json(['message' => 'Template messages are only available for Official Cloud API sessions.'], 422);
         }
 
         $data = $request->validate([
             'to' => $this->recipientRules(),
-            'name' => ['required', 'string', 'max:512'],
-            'language' => ['required', 'string', 'max:35'],
+            'template_id' => ['nullable', 'required_without:name', 'string', 'regex:/^\d+$/'],
+            'name' => ['nullable', 'required_without:template_id', 'string', 'max:512'],
+            'language' => ['nullable', 'required_without:template_id', 'string', 'max:35'],
+            'parameters' => ['nullable', 'array'],
+            'parameters.*' => ['nullable', 'string', 'max:4096'],
             'components' => ['nullable', 'array'],
-            'header_media_type' => ['nullable', 'required_with:media_base64', 'in:image,video,document'],
+            'header_media_type' => ['nullable', 'in:image,video,document'],
             'media_base64' => ['nullable', 'string'],
             'mime_type' => ['nullable', 'required_with:media_base64', 'string', 'max:120'],
             'filename' => ['nullable', 'string', 'max:160'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
+        if (array_key_exists('parameters', $data) && array_key_exists('components', $data)) {
+            throw ValidationException::withMessages(['parameters' => 'Use parameters or components, not both.']);
+        }
         if (filled($data['header_media_type'] ?? null) && ! filled($data['media_base64'] ?? null)) {
             throw ValidationException::withMessages(['media_base64' => 'media_base64 is required with header_media_type.']);
         }
         $this->assertValidBase64($data['media_base64'] ?? null, 'media_base64');
-        if (filled($data['media_base64'] ?? null)) {
+
+        if (filled($data['template_id'] ?? null)) {
+            $template = $templates->find($session, $data['template_id']);
+            if ($template->status !== 'APPROVED' || ! $template->is_active) {
+                throw ValidationException::withMessages(['template_id' => 'Only active approved templates can be sent.']);
+            }
+            $mediaField = collect($builder->parameterSchema($template))->first(
+                fn (array $field) => $field['component'] === 'header' && $field['input'] === 'file'
+            );
+            if ($mediaField && ! filled($data['media_base64'] ?? null)) {
+                throw ValidationException::withMessages(['media_base64' => $mediaField['label'].' is required for this template.']);
+            }
+            if ($mediaField) {
+                $data['header_media_type'] = $mediaField['format'];
+                $this->assertMimeTypeMatchesMessageType($data['header_media_type'], $data['mime_type'], 'mime_type');
+            } elseif (filled($data['media_base64'] ?? null)) {
+                throw ValidationException::withMessages(['media_base64' => 'This template does not use a media header.']);
+            }
+            $data['name'] = $template->name;
+            $data['language'] = $template->language;
+            $data['components'] = array_key_exists('components', $data)
+                ? $data['components']
+                : $builder->components($template, $data['parameters'] ?? []);
+        } elseif (filled($data['media_base64'] ?? null)) {
+            if (! filled($data['header_media_type'] ?? null)) {
+                throw ValidationException::withMessages(['header_media_type' => 'header_media_type is required with media_base64.']);
+            }
             $this->assertMimeTypeMatchesMessageType($data['header_media_type'], $data['mime_type'], 'mime_type');
         }
 

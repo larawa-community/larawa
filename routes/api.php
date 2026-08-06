@@ -44,6 +44,7 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
     Route::post('/sessions/{session}/conversations/{conversation}/messages/template', [CloudConversationController::class, 'sendTemplate'])->middleware('api.key:messages:send');
 
     Route::get('/sessions/{session}/templates', [WhatsappTemplateController::class, 'index'])->middleware('api.key:templates:read');
+    Route::get('/sessions/{session}/templates/{template}', [WhatsappTemplateController::class, 'show'])->middleware('api.key:templates:read');
     Route::post('/sessions/{session}/templates/sync', [WhatsappTemplateController::class, 'sync'])->middleware('api.key:templates:write');
     Route::post('/sessions/{session}/templates', [WhatsappTemplateController::class, 'store'])->middleware('api.key:templates:write');
     Route::patch('/sessions/{session}/templates/{template}', [WhatsappTemplateController::class, 'update'])->middleware('api.key:templates:write');

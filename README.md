@@ -117,6 +117,24 @@ curl -X POST http://localhost:8080/api/v1/sessions/SESSION_UUID/messages/image \
 
 You can also send media with `media_base64` instead of `media_url`. See the [OpenAPI document](docs/openapi.yaml) for the full request and response format.
 
+### Send an Official Cloud API Template
+
+List templates with `GET /api/v1/sessions/SESSION_UUID/templates`, then read one template and its client-renderable form schema with `GET /api/v1/sessions/SESSION_UUID/templates/TEMPLATE_ID`. Send the returned parameter keys without repeating the template language:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/sessions/SESSION_UUID/messages/template \
+  -H "Authorization: Bearer lwa_your_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "+12025550100",
+    "template_id": "983328304742813",
+    "parameters": {
+      "body_1": "Ada",
+      "body_2": "ORD-123"
+    }
+  }'
+```
+
 ## Technical Stack
 
 - **Backend:** Laravel 13, PHP 8.4
