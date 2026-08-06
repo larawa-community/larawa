@@ -89,18 +89,48 @@ class CloudTemplateController extends Controller
         $template = $templates->find($session, $template);
         abort_unless($template->status === 'APPROVED' && $template->is_active, 422, 'Only active approved templates can be sent.');
         $data = $request->validate([
-            'to' => ['required', 'string', 'max:80'],
+            'country_code' => ['required', 'string', 'regex:/^\+\d{1,3}$/'],
+            'phone_number' => ['required', 'string', 'max:30', 'regex:/^[0-9\s().-]+$/'],
             'parameters' => ['nullable', 'array'],
             'parameters.*' => ['nullable', 'string', 'max:4096'],
+            'header_media' => ['nullable', 'file', 'max:'.max(1, (int) ceil((int) config('larawa.media_base64_max_bytes') / 1024))],
         ]);
+        $to = ltrim($data['country_code'], '+').preg_replace('/\D+/', '', $data['phone_number']);
+        if (strlen($to) < 8 || strlen($to) > 15) {
+            throw ValidationException::withMessages(['phone_number' => 'Enter a valid international phone number.']);
+        }
+
+        $mediaHeader = collect($template->components ?: [])->first(
+            fn ($component) => strtoupper((string) ($component['type'] ?? '')) === 'HEADER'
+                && in_array(strtoupper((string) ($component['format'] ?? '')), ['IMAGE', 'VIDEO', 'DOCUMENT'], true)
+        );
+        $mediaPayload = [];
+        if ($mediaHeader) {
+            if (! $request->hasFile('header_media')) {
+                throw ValidationException::withMessages(['header_media' => ucfirst(strtolower($mediaHeader['format'])).' is required for this template.']);
+            }
+            $file = $request->file('header_media');
+            $headerMediaType = strtolower($mediaHeader['format']);
+            $mimeType = $file->getMimeType() ?: 'application/octet-stream';
+            if (($headerMediaType === 'image' && ! str_starts_with($mimeType, 'image/'))
+                || ($headerMediaType === 'video' && ! str_starts_with($mimeType, 'video/'))) {
+                throw ValidationException::withMessages(['header_media' => 'The uploaded file does not match the template header type.']);
+            }
+            $mediaPayload = [
+                'header_media_type' => $headerMediaType,
+                'media_base64' => base64_encode($file->get()),
+                'mime_type' => $mimeType,
+                'filename' => $file->getClientOriginalName(),
+            ];
+        }
         $components = self::sendComponents($template, $data['parameters'] ?? []);
-        $result = $sender->send($workspace, $session, array_filter([
+        $result = $sender->send($workspace, $session, array_merge(array_filter([
             'type' => 'template',
-            'to' => $data['to'],
+            'to' => $to,
             'name' => $template->name,
             'language' => $template->language,
             'components' => $components,
-        ], fn ($value) => $value !== []));
+        ], fn ($value) => $value !== []), $mediaPayload));
 
         $audit->log(
             $result->failed() ? 'cloud_template.send_failed' : 'cloud_template.sent',
@@ -142,9 +172,10 @@ class CloudTemplateController extends Controller
                 if ($format !== 'TEXT' || str_contains((string) ($component['text'] ?? ''), '{{')) {
                     $fields[] = [
                         'key' => 'header',
-                        'label' => $format === 'TEXT' ? 'Header value' : ucfirst(strtolower($format)).' public URL',
+                        'label' => $format === 'TEXT' ? 'Header value' : ucfirst(strtolower($format)).' upload',
                         'component' => 'header',
                         'format' => strtolower($format),
+                        'input' => $format === 'TEXT' ? 'text' : 'file',
                     ];
                 }
             }
@@ -172,6 +203,9 @@ class CloudTemplateController extends Controller
         $body = [];
 
         foreach (self::parameterFields($template) as $field) {
+            if ($field['component'] === 'header' && ($field['input'] ?? null) === 'file') {
+                continue;
+            }
             $value = trim((string) ($parameters[$field['key']] ?? ''));
             if ($value === '') {
                 throw ValidationException::withMessages([

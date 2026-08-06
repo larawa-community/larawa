@@ -771,6 +771,10 @@ paths:
                 name: { type: string, example: order_update }
                 language: { type: string, example: en_US }
                 components: { type: array, items: { type: object } }
+                header_media_type: { type: string, enum: [image, video, document], description: Required with media_base64. LaraWA uploads the decoded file to Meta and inserts the returned media ID into the template header. }
+                media_base64: { type: string, format: byte, description: Base64-encoded template header media; no public URL is required. }
+                mime_type: { type: string, example: image/jpeg, description: Required with media_base64 and must match header_media_type. }
+                filename: { type: string, example: invitation.jpg }
                 idempotency_key: { type: string }
       responses:
         "202": { description: Template accepted by Meta }
@@ -833,6 +837,10 @@ paths:
               properties:
                 template_id: { type: string, pattern: "^[0-9]+$", example: "983328304742813", description: Numeric Meta template ID. }
                 components: { type: array, items: { type: object } }
+                header_media_type: { type: string, enum: [image, video, document], description: Required with media_base64. LaraWA uploads the decoded file to Meta and inserts the returned media ID into the template header. }
+                media_base64: { type: string, format: byte, description: Base64-encoded template header media; no public URL is required. }
+                mime_type: { type: string, example: image/jpeg, description: Required with media_base64 and must match header_media_type. }
+                filename: { type: string, example: invitation.jpg }
                 idempotency_key: { type: string, maxLength: 120 }
       responses:
         "202": { description: Template accepted by Meta }

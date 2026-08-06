@@ -12,6 +12,7 @@ use App\Services\MessageSendResult;
 use App\Services\MetaWhatsappTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class CloudConversationController extends Controller
 {
@@ -89,8 +90,16 @@ class CloudConversationController extends Controller
         $data = $request->validate([
             'template_id' => ['required', 'string', 'regex:/^\d+$/'],
             'components' => ['nullable', 'array'],
+            'header_media_type' => ['nullable', 'required_with:media_base64', 'in:image,video,document'],
+            'media_base64' => ['nullable', 'string'],
+            'mime_type' => ['nullable', 'required_with:media_base64', 'string', 'max:120'],
+            'filename' => ['nullable', 'string', 'max:160'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
+        if (filled($data['header_media_type'] ?? null) && ! filled($data['media_base64'] ?? null)) {
+            throw ValidationException::withMessages(['media_base64' => 'media_base64 is required with header_media_type.']);
+        }
+        $this->assertValidTemplateMedia($data);
         $template = $templates->find($session, $data['template_id']);
         abort_unless($template->status === 'APPROVED' && $template->is_active, 404);
         $result = $sender->send($workspace, $session, array_filter([
@@ -99,6 +108,10 @@ class CloudConversationController extends Controller
             'name' => $template->name,
             'language' => $template->language,
             'components' => $data['components'] ?? null,
+            'header_media_type' => $data['header_media_type'] ?? null,
+            'media_base64' => $data['media_base64'] ?? null,
+            'mime_type' => $data['mime_type'] ?? null,
+            'filename' => $data['filename'] ?? null,
             'idempotency_key' => $data['idempotency_key'] ?? null,
         ], fn ($value) => $value !== null));
 
@@ -146,5 +159,28 @@ class CloudConversationController extends Controller
         }
 
         return response()->json(['data' => $result->message], $result->status);
+    }
+
+    private function assertValidTemplateMedia(array $data): void
+    {
+        if (! filled($data['media_base64'] ?? null)) {
+            return;
+        }
+        $normalized = preg_replace('/\s+/', '', $data['media_base64']) ?: '';
+        $decoded = base64_decode($normalized, true);
+        if ($normalized === '' || strlen($normalized) % 4 !== 0 || ! preg_match('/^[A-Za-z0-9+\/]*={0,2}$/', $normalized) || $decoded === false) {
+            throw ValidationException::withMessages(['media_base64' => 'media_base64 must be valid base64.']);
+        }
+        if (strlen($decoded) > (int) config('larawa.media_base64_max_bytes')) {
+            throw ValidationException::withMessages(['media_base64' => 'media_base64 exceeds the maximum decoded media size.']);
+        }
+        $prefix = match ($data['header_media_type']) {
+            'image' => 'image/',
+            'video' => 'video/',
+            'document' => null,
+        };
+        if ($prefix && ! str_starts_with(strtolower($data['mime_type']), $prefix)) {
+            throw ValidationException::withMessages(['mime_type' => "The MIME type does not match the {$data['header_media_type']} header media type."]);
+        }
     }
 }

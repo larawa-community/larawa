@@ -65,10 +65,15 @@ class CloudApiWhatsappTransport implements WhatsappTransport
         if ($type === 'text') {
             $body['text'] = ['body' => (string) ($payload['text'] ?? '')];
         } elseif ($type === 'template') {
+            $components = $payload['components'] ?? null;
+            if (filled($payload['header_media_type'] ?? null)) {
+                $mediaId = $this->uploadMedia($config, $payload);
+                $components = $this->withTemplateHeaderMedia($components ?: [], $payload['header_media_type'], $mediaId);
+            }
             $body['template'] = array_filter([
                 'name' => $payload['name'] ?? null,
                 'language' => ['code' => $payload['language'] ?? null],
-                'components' => $payload['components'] ?? null,
+                'components' => $components,
             ], fn ($value) => $value !== null);
         } elseif ($type === 'reaction') {
             if (! filled($payload['to'] ?? null)) {
@@ -155,6 +160,26 @@ class CloudApiWhatsappTransport implements WhatsappTransport
             ->json();
 
         return (string) ($result['id'] ?? throw ValidationException::withMessages(['media' => 'Meta did not return an uploaded media ID.']));
+    }
+
+    private function withTemplateHeaderMedia(array $components, string $type, string $mediaId): array
+    {
+        $header = ['type' => 'header', 'parameters' => [[
+            'type' => $type,
+            $type => ['id' => $mediaId],
+        ]]];
+
+        foreach ($components as $index => $component) {
+            if (strtolower((string) ($component['type'] ?? '')) === 'header') {
+                $components[$index] = $header;
+
+                return array_values($components);
+            }
+        }
+
+        array_unshift($components, $header);
+
+        return $components;
     }
 
     private function recipient(mixed $value): string

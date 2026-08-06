@@ -72,14 +72,12 @@
         $sendFields = \App\Http\Controllers\Dashboard\CloudTemplateController::parameterFields($templateDetail);
         $rejectionReason = $templateDetail->meaningfulRejectionReason();
     @endphp
-    <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section class="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_18px_55px_-38px_rgba(15,23,42,.45)]">
             <header class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
                 <div>
                     <a href="{{ route('dashboard.sessions.templates.index', $session) }}" class="text-xs font-semibold text-[#128c42] hover:text-[#0d6f34]">← Template list</a>
                     <div class="mt-3 flex flex-wrap items-center gap-2">
                         <h3 class="break-all text-xl font-semibold text-slate-900">{{ $templateDetail->name }}</h3>
-                        <span class="rounded-full px-2.5 py-1 text-[10px] font-bold {{ $statusTone($templateDetail->status) }}">{{ $templateDetail->status }}</span>
                     </div>
                     <p class="mt-1 text-sm text-slate-500">{{ $templateDetail->language }} · {{ ucfirst(strtolower($templateDetail->category)) }} · {{ ucfirst(strtolower($templateDetail->parameter_format ?: 'positional')) }}</p>
                 </div>
@@ -88,15 +86,18 @@
                 @endif
             </header>
 
-            <div class="grid gap-6 px-5 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div class="grid gap-8 px-5 py-6 sm:px-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,.65fr)]">
                 <div class="space-y-5">
-                    <div class="rounded-xl bg-[#efeae2] p-4 sm:p-6">
-                        <div class="max-w-xl rounded-lg rounded-tl-sm bg-white px-4 py-3 shadow-sm">
+                    <div class="rounded-2xl bg-[#efeae2] p-4 ring-1 ring-black/[.03] sm:p-7">
+                        <div class="mx-auto max-w-2xl rounded-xl rounded-tl-sm bg-white px-5 py-4 shadow-[0_12px_30px_-18px_rgba(15,23,42,.45)]">
                             @if ($detailHeader)
                                 @if (strtoupper($detailHeader['format'] ?? 'TEXT') === 'TEXT')
                                     <div class="mb-2 font-semibold text-slate-900">{{ $detailHeader['text'] ?? '' }}</div>
                                 @else
-                                    <div class="mb-3 flex h-40 items-center justify-center rounded-md bg-slate-100 text-sm font-semibold text-slate-500">{{ ucfirst(strtolower($detailHeader['format'] ?? 'media')) }} header</div>
+                                    <div class="mb-4 flex h-48 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 text-sm font-semibold text-slate-500">
+                                        <svg class="h-7 w-7 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 16l4.6-4.6a2 2 0 012.8 0L16 16m-2-2 1.6-1.6a2 2 0 012.8 0L20 14.1M8.5 8.5h.01M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                        {{ ucfirst(strtolower($detailHeader['format'] ?? 'media')) }} header
+                                    </div>
                                 @endif
                             @endif
                             <div class="whitespace-pre-wrap text-[15px] leading-6 text-slate-800">{{ $detailBody['text'] ?? 'No body content returned by Meta.' }}</div>
@@ -115,34 +116,61 @@
                     @endif
                 </div>
 
-                <aside class="space-y-4">
-                    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div class="text-xs font-bold uppercase tracking-wide text-slate-500">Meta status</div>
-                        <div class="mt-2 font-semibold text-slate-900">{{ ucfirst(strtolower($templateDetail->status)) }}</div>
-                        <p class="mt-1 text-xs leading-5 text-slate-600">{{ $templateDetail->statusDescription() }}</p>
+                @if ($templateDetail->status === 'APPROVED' && $templateDetail->is_active)
+                <aside class="self-start rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200/80 sm:p-6">
+                    <div class="mb-6">
+                        <p class="text-[11px] font-bold uppercase tracking-[.14em] text-[#128c42]">Send message</p>
+                        <h4 class="mt-2 text-lg font-semibold text-slate-950">Complete the template</h4>
+                        <p class="mt-1 text-sm leading-6 text-slate-500">Add the recipient and the values that will replace each template variable.</p>
                     </div>
-                    <dl class="grid grid-cols-2 gap-3 text-xs">
-                        <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Quality</dt><dd class="mt-1 font-semibold text-slate-900">{{ $templateDetail->displayQualityScore() }}</dd></div>
-                        <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Fetched</dt><dd class="mt-1 font-semibold text-slate-900">Just now</dd></div>
-                        <div class="col-span-2 rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Meta template ID</dt><dd class="mt-1 break-all font-mono text-slate-900">{{ $templateDetail->meta_template_id ?: 'Not assigned' }}</dd></div>
-                    </dl>
+                <form method="POST" enctype="multipart/form-data" action="{{ route('dashboard.sessions.templates.send', [$session, $templateDetail->meta_template_id]) }}" class="space-y-5" data-meta-action-form data-meta-action-label="Sending the template through Meta…">
+                    @csrf
+                    <fieldset>
+                        <legend class="text-xs font-semibold text-slate-700">Customer number</legend>
+                        <div class="mt-2 grid grid-cols-[132px_minmax(0,1fr)] gap-2">
+                            <label class="sr-only" for="template-country-code">Country code</label>
+                            <select id="template-country-code" name="country_code" required class="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-[#128c42] focus:ring-4 focus:ring-emerald-100">
+                                @foreach (['+81' => 'JP +81', '+852' => 'HK +852', '+853' => 'MO +853', '+86' => 'CN +86', '+886' => 'TW +886', '+65' => 'SG +65', '+60' => 'MY +60', '+62' => 'ID +62', '+63' => 'PH +63', '+66' => 'TH +66', '+84' => 'VN +84', '+82' => 'KR +82', '+91' => 'IN +91', '+1' => 'US/CA +1', '+44' => 'UK +44', '+61' => 'AU +61', '+64' => 'NZ +64', '+33' => 'FR +33', '+49' => 'DE +49', '+39' => 'IT +39', '+34' => 'ES +34', '+31' => 'NL +31', '+41' => 'CH +41', '+46' => 'SE +46', '+47' => 'NO +47', '+45' => 'DK +45', '+358' => 'FI +358', '+971' => 'AE +971', '+966' => 'SA +966', '+974' => 'QA +974', '+972' => 'IL +972', '+27' => 'ZA +27', '+20' => 'EG +20', '+234' => 'NG +234', '+254' => 'KE +254', '+55' => 'BR +55', '+52' => 'MX +52', '+54' => 'AR +54', '+56' => 'CL +56', '+57' => 'CO +57'] as $code => $label)
+                                    <option value="{{ $code }}" @selected(old('country_code', '+81') === $code)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            <label class="sr-only" for="template-phone-number">Phone number</label>
+                            <input id="template-phone-number" name="phone_number" inputmode="tel" autocomplete="tel-national" required value="{{ old('phone_number') }}" placeholder="90 1234 5678" class="min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-normal text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#128c42] focus:ring-4 focus:ring-emerald-100">
+                        </div>
+                        <p class="mt-2 text-[11px] leading-4 text-slate-500">Enter the number without the country code or leading zero.</p>
+                    </fieldset>
+                    <div class="space-y-4">
+                        @foreach ($sendFields as $field)
+                            @if (($field['input'] ?? 'text') === 'file')
+                                <label class="block text-xs font-semibold text-slate-700">{{ $field['label'] }}
+                                    <span class="mt-2 flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-4 text-sm font-normal text-slate-600 transition hover:border-[#128c42] hover:bg-emerald-50/40">
+                                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#128c42]"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4"/></svg></span>
+                                        <span><strong class="block font-semibold text-slate-800" data-template-media-name>Choose {{ $field['format'] }}</strong><span class="text-xs text-slate-500">Uploaded securely to Meta</span></span>
+                                        <input name="header_media" type="file" required class="sr-only" data-template-media-input accept="{{ $field['format'] === 'image' ? 'image/jpeg,image/png,image/webp' : ($field['format'] === 'video' ? 'video/mp4' : '.pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx') }}">
+                                    </span>
+                                </label>
+                            @else
+                                <label class="block text-xs font-semibold text-slate-700">{{ $field['label'] }}<input name="parameters[{{ $field['key'] }}]" value="{{ old('parameters.'.$field['key']) }}" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-normal text-slate-900 outline-none transition focus:border-[#128c42] focus:ring-4 focus:ring-emerald-100"></label>
+                            @endif
+                        @endforeach
+                    </div>
+                    <button class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-slate-900/10 transition hover:-translate-y-0.5 hover:bg-[#128c42] focus:outline-none focus:ring-4 focus:ring-emerald-200">Send template <span aria-hidden="true">→</span></button>
+                </form>
                 </aside>
+                @else
+                    <aside class="self-start rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">This template cannot be sent until it is active and approved by Meta.</aside>
+                @endif
             </div>
 
-            @if ($templateDetail->status === 'APPROVED' && $templateDetail->is_active)
-                <form method="POST" action="{{ route('dashboard.sessions.templates.send', [$session, $templateDetail->meta_template_id]) }}" class="border-t border-slate-200 bg-slate-50/70 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Sending the template through Meta…">
-                    @csrf
-                    <div class="flex flex-wrap items-end gap-3">
-                        <label class="min-w-[220px] flex-1 text-xs font-semibold text-slate-600">Customer number<input name="to" required placeholder="819012345678" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900"></label>
-                        @foreach ($sendFields as $field)
-                            <label class="min-w-[220px] flex-1 text-xs font-semibold text-slate-600">{{ $field['label'] }}<input name="parameters[{{ $field['key'] }}]" required class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal text-slate-900"></label>
-                        @endforeach
-                        <button class="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">Send template</button>
-                    </div>
-                </form>
-            @endif
-        </section>
-    </div>
+            <footer class="border-t border-slate-200 bg-slate-50/70 px-5 py-5 sm:px-6">
+                <dl class="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-[1.3fr_.7fr_.7fr_1.3fr]">
+                    <div class="rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200"><dt class="font-bold uppercase tracking-wide text-slate-500">Meta status</dt><dd class="mt-1.5 flex items-center gap-2 font-semibold text-slate-900"><span class="h-2 w-2 rounded-full {{ $templateDetail->status === 'APPROVED' ? 'bg-emerald-500' : 'bg-amber-500' }}"></span>{{ ucfirst(strtolower($templateDetail->status)) }}</dd><p class="mt-1 text-[11px] leading-4 text-slate-500">{{ $templateDetail->statusDescription() }}</p></div>
+                    <div class="rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200"><dt class="text-slate-500">Quality</dt><dd class="mt-1.5 font-semibold text-slate-900">{{ $templateDetail->displayQualityScore() }}</dd></div>
+                    <div class="rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200"><dt class="text-slate-500">Fetched</dt><dd class="mt-1.5 font-semibold text-slate-900">Just now</dd></div>
+                    <div class="rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200"><dt class="text-slate-500">Meta template ID</dt><dd class="mt-1.5 break-all font-mono text-slate-900">{{ $templateDetail->meta_template_id ?: 'Not assigned' }}</dd></div>
+                </dl>
+            </footer>
+    </section>
 @else
     <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]" data-template-editor>
         <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

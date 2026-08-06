@@ -186,6 +186,34 @@ class CloudApiWhatsappTest extends TestCase
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/messages') && $request['document']['id'] === 'media-1');
     }
 
+    public function test_template_send_api_accepts_base64_header_media(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local']);
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $cloud = $this->cloudSession($workspace);
+        [, $key] = app(ApiKeyService::class)->create($workspace, 'Send templates', ['messages:send']);
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-1/media' => Http::response(['id' => 'template-media-1']),
+            'https://graph.facebook.com/v25.0/phone-1/messages' => Http::response(['messages' => [['id' => 'wamid.template-media']]]),
+        ]);
+
+        $this->withToken($key)->postJson("/api/v1/sessions/{$cloud->uuid}/messages/template", [
+            'to' => '+1 555 123 4567',
+            'name' => 'image_notice',
+            'language' => 'en_US',
+            'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'Ada']]]],
+            'header_media_type' => 'image',
+            'media_base64' => base64_encode('image bytes'),
+            'mime_type' => 'image/jpeg',
+            'filename' => 'notice.jpg',
+        ])->assertAccepted()->assertJsonPath('data.wa_message_id', 'wamid.template-media');
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/messages')
+            && $request['template']['components'][0]['parameters'][0]['image']['id'] === 'template-media-1'
+            && $request['template']['components'][1]['parameters'][0]['text'] === 'Ada');
+    }
+
     public function test_ambiguous_worker_server_error_does_not_fall_back(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);

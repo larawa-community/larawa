@@ -579,7 +579,8 @@ class CloudDashboardTest extends TestCase
         $this->actingAs($user)
             ->withSession(['dashboard_workspace_id' => $workspace->id])
             ->post(route('dashboard.sessions.templates.send', [$session, $template['id']]), [
-                'to' => '819012345678',
+                'country_code' => '+81',
+                'phone_number' => '90 1234 5678',
                 'parameters' => ['body_1' => 'Aiko', 'body_2' => 'A-123'],
             ])
             ->assertRedirect()
@@ -588,6 +589,45 @@ class CloudDashboardTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard/messages'
             && $request['template']['components'][0]['parameters'][0]['text'] === 'Aiko'
             && $request['template']['components'][0]['parameters'][1]['text'] === 'A-123');
+    }
+
+    public function test_template_composer_uploads_an_image_header_and_uses_a_meta_media_id(): void
+    {
+        Storage::fake('local');
+        config(['filesystems.default' => 'local']);
+        [$workspace, $session, $user] = $this->cloudSession('workspace_user');
+        $template = [
+            'id' => '983328304742899',
+            'name' => 'event_invitation',
+            'language' => 'en_US',
+            'category' => 'UTILITY',
+            'components' => [
+                ['type' => 'HEADER', 'format' => 'IMAGE'],
+                ['type' => 'BODY', 'text' => 'Hello {{guest_name}}'],
+            ],
+            'status' => 'APPROVED',
+        ];
+        Http::fake([
+            'https://graph.facebook.com/v25.0/waba-dashboard/message_templates*' => Http::response(['data' => [$template]]),
+            'https://graph.facebook.com/v25.0/phone-dashboard/media' => Http::response(['id' => 'media-template-1']),
+            'https://graph.facebook.com/v25.0/phone-dashboard/messages' => Http::response(['messages' => [['id' => 'wamid.dashboard.media-template']]]),
+        ]);
+
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->post(route('dashboard.sessions.templates.send', [$session, $template['id']]), [
+                'country_code' => '+852',
+                'phone_number' => '9123 4567',
+                'header_media' => UploadedFile::fake()->image('invite.jpg'),
+                'parameters' => ['body_guest_name' => 'Ada'],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('status', 'Template message queued for delivery.');
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard/media');
+        Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard/messages'
+            && $request['to'] === '85291234567'
+            && $request['template']['components'][0]['parameters'][0]['image']['id'] === 'media-template-1');
     }
 
     public function test_template_detail_explains_status_without_showing_meta_none_as_a_rejection(): void

@@ -32,6 +32,13 @@ document.querySelectorAll('[data-meta-action-form]').forEach((form) => {
     });
 });
 
+document.querySelectorAll('[data-template-media-input]').forEach((input) => {
+    input.addEventListener('change', () => {
+        const name = input.closest('label')?.querySelector('[data-template-media-name]');
+        if (name) name.textContent = input.files?.[0]?.name || 'Choose file';
+    });
+});
+
 window.addEventListener('pageshow', () => {
     document.querySelectorAll('[data-meta-action-form]').forEach((form) => {
         delete form.dataset.metaSubmitting;

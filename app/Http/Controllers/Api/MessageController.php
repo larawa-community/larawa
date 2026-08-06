@@ -113,8 +113,19 @@ class MessageController extends Controller
             'name' => ['required', 'string', 'max:512'],
             'language' => ['required', 'string', 'max:35'],
             'components' => ['nullable', 'array'],
+            'header_media_type' => ['nullable', 'required_with:media_base64', 'in:image,video,document'],
+            'media_base64' => ['nullable', 'string'],
+            'mime_type' => ['nullable', 'required_with:media_base64', 'string', 'max:120'],
+            'filename' => ['nullable', 'string', 'max:160'],
             'idempotency_key' => ['nullable', 'string', 'max:120'],
         ]);
+        if (filled($data['header_media_type'] ?? null) && ! filled($data['media_base64'] ?? null)) {
+            throw ValidationException::withMessages(['media_base64' => 'media_base64 is required with header_media_type.']);
+        }
+        $this->assertValidBase64($data['media_base64'] ?? null, 'media_base64');
+        if (filled($data['media_base64'] ?? null)) {
+            $this->assertMimeTypeMatchesMessageType($data['header_media_type'], $data['mime_type'], 'mime_type');
+        }
 
         return $this->send($request, $session, $sender, $audit, array_filter([
             'type' => 'template',
@@ -122,6 +133,10 @@ class MessageController extends Controller
             'name' => $data['name'],
             'language' => $data['language'],
             'components' => $data['components'] ?? null,
+            'header_media_type' => $data['header_media_type'] ?? null,
+            'media_base64' => $data['media_base64'] ?? null,
+            'mime_type' => $data['mime_type'] ?? null,
+            'filename' => $data['filename'] ?? null,
             'idempotency_key' => $data['idempotency_key'] ?? null,
         ], fn ($value) => $value !== null));
     }
