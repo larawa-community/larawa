@@ -85,6 +85,7 @@ class CloudTemplateController extends Controller
         MessageSender $sender,
         AuditLogger $audit,
         MetaWhatsappTemplateService $templates,
+        MetaWhatsappTemplateMessageBuilder $builder,
     ): RedirectResponse {
         $workspace = $this->authorizeCloudSession($request, $session, 'cloud-conversations.reply');
         $template = $templates->find($session, $template);
@@ -124,13 +125,15 @@ class CloudTemplateController extends Controller
                 'filename' => $file->getClientOriginalName(),
             ];
         }
-        $components = self::sendComponents($template, $data['parameters'] ?? []);
+        $parameters = $data['parameters'] ?? [];
+        $components = $builder->components($template, $parameters);
         $result = $sender->send($workspace, $session, array_merge(array_filter([
             'type' => 'template',
             'to' => $to,
             'name' => $template->name,
             'language' => $template->language,
             'components' => $components,
+            'text' => $builder->bodyText($template, $parameters, $components),
         ], fn ($value) => $value !== []), $mediaPayload));
 
         $audit->log(

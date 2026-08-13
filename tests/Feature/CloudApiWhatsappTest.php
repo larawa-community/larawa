@@ -159,7 +159,8 @@ class CloudApiWhatsappTest extends TestCase
                 ],
             ])
             ->assertAccepted()
-            ->assertJsonPath('data.wa_message_id', 'wamid.template-by-id');
+            ->assertJsonPath('data.wa_message_id', 'wamid.template-by-id')
+            ->assertJsonPath('data.body', '太郎 様、注文 ORD-123 を発送しました。');
 
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/phone-1/messages')
             && $request['template']['name'] === 'order_update'

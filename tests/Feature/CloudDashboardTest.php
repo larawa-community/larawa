@@ -589,6 +589,17 @@ class CloudDashboardTest extends TestCase
         Http::assertSent(fn ($request) => $request->url() === 'https://graph.facebook.com/v25.0/phone-dashboard/messages'
             && $request['template']['components'][0]['parameters'][0]['text'] === 'Aiko'
             && $request['template']['components'][0]['parameters'][1]['text'] === 'A-123');
+        $this->assertDatabaseHas('messages', [
+            'type' => 'template',
+            'body' => 'Hello Aiko, order A-123 is ready.',
+        ]);
+
+        $message = Message::query()->where('type', 'template')->firstOrFail();
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->get(route('dashboard.sessions.conversations.show', [$session, $message->conversation_id]))
+            ->assertOk()
+            ->assertSee('Hello Aiko, order A-123 is ready.');
     }
 
     public function test_template_composer_uploads_an_image_header_and_uses_a_meta_media_id(): void

@@ -103,7 +103,8 @@ class CloudConversationApiTest extends TestCase
                 'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'Ada']]]],
             ])
             ->assertAccepted()
-            ->assertJsonPath('data.wa_message_id', 'wamid.template');
+            ->assertJsonPath('data.wa_message_id', 'wamid.template')
+            ->assertJsonPath('data.body', 'Welcome Ada');
     }
 
     /** @return array{Workspace, WhatsappSession, WhatsappConversation} */

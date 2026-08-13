@@ -162,6 +162,7 @@ class MessageController extends Controller
             $data['components'] = array_key_exists('components', $data)
                 ? $data['components']
                 : $builder->components($template, $data['parameters'] ?? []);
+            $data['text'] = $builder->bodyText($template, $data['parameters'] ?? [], $data['components']);
         } elseif (filled($data['media_base64'] ?? null)) {
             if (! filled($data['header_media_type'] ?? null)) {
                 throw ValidationException::withMessages(['header_media_type' => 'header_media_type is required with media_base64.']);
@@ -175,6 +176,7 @@ class MessageController extends Controller
             'name' => $data['name'],
             'language' => $data['language'],
             'components' => $data['components'] ?? null,
+            'text' => $data['text'] ?? null,
             'header_media_type' => $data['header_media_type'] ?? null,
             'media_base64' => $data['media_base64'] ?? null,
             'mime_type' => $data['mime_type'] ?? null,

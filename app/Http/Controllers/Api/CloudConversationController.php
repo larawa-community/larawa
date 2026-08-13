@@ -129,6 +129,7 @@ class CloudConversationController extends Controller
             'name' => $template->name,
             'language' => $template->language,
             'components' => $components,
+            'text' => $builder->bodyText($template, $data['parameters'] ?? [], $components),
             'header_media_type' => $data['header_media_type'] ?? null,
             'media_base64' => $data['media_base64'] ?? null,
             'mime_type' => $data['mime_type'] ?? null,

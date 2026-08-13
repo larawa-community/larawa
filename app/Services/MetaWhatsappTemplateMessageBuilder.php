@@ -107,4 +107,44 @@ class MetaWhatsappTemplateMessageBuilder
 
         return $components;
     }
+
+    public function bodyText(MetaWhatsappTemplate $template, array $parameters = [], array $components = []): ?string
+    {
+        $body = collect($template->components ?: [])->first(
+            fn (array $component) => strtoupper((string) ($component['type'] ?? '')) === 'BODY'
+        );
+        $text = (string) ($body['text'] ?? '');
+        if ($text === '') {
+            return null;
+        }
+
+        $values = [];
+        foreach ($this->parameterSchema($template) as $field) {
+            if ($field['component'] !== 'body' || ! array_key_exists($field['key'], $parameters)) {
+                continue;
+            }
+
+            $values[(string) $field['variable']] = (string) $parameters[$field['key']];
+        }
+
+        $bodyComponent = collect($components)->first(
+            fn (array $component) => strtolower((string) ($component['type'] ?? '')) === 'body'
+        );
+        foreach (array_values($bodyComponent['parameters'] ?? []) as $index => $parameter) {
+            if (strtolower((string) ($parameter['type'] ?? 'text')) !== 'text') {
+                continue;
+            }
+
+            $key = filled($parameter['parameter_name'] ?? null)
+                ? (string) $parameter['parameter_name']
+                : (string) ($index + 1);
+            $values[$key] = (string) ($parameter['text'] ?? '');
+        }
+
+        return preg_replace_callback(
+            '/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*|\d+)\s*\}\}/',
+            fn (array $match) => array_key_exists($match[1], $values) ? $values[$match[1]] : $match[0],
+            $text,
+        );
+    }
 }
