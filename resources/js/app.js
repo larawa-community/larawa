@@ -622,6 +622,11 @@ if (cloudInbox) {
     const selectedId = cloudInbox.dataset.cloudInboxSelectedId || '';
     const mobileShowingDetail = cloudInbox.dataset.cloudInboxMobileDetail === 'true';
     const conversationList = cloudInbox.querySelector('[data-cloud-inbox-conversations]');
+    const conversationItems = cloudInbox.querySelector('[data-cloud-inbox-conversation-items]');
+    const conversationLoadMore = cloudInbox.querySelector('[data-cloud-inbox-load-more]');
+    const conversationLoadSpinner = cloudInbox.querySelector('[data-cloud-inbox-load-spinner]');
+    const conversationLoadLabel = cloudInbox.querySelector('[data-cloud-inbox-load-label]');
+    const conversationLoadRetry = cloudInbox.querySelector('[data-cloud-inbox-load-retry]');
     const messageList = cloudInbox.querySelector('[data-cloud-inbox-messages]');
     const total = cloudInbox.querySelector('[data-cloud-inbox-total]');
     const liveStatus = cloudInbox.querySelector('[data-cloud-inbox-live-status]');
@@ -648,6 +653,8 @@ if (cloudInbox) {
     const imageViewerClose = cloudInbox.querySelector('[data-cloud-inbox-image-viewer-close]');
     let timer = null;
     let inFlight = false;
+    let loadingMore = false;
+    let nextConversationPage = Number(cloudInbox.dataset.cloudInboxNextPage || 0);
     let failures = 0;
     let conversationSignature = null;
     let messageSignature = null;
@@ -675,6 +682,7 @@ if (cloudInbox) {
         const isSelected = String(conversation.id) === selectedId
             && (mobileShowingDetail || window.matchMedia('(min-width: 1024px)').matches);
         link.href = conversation.show_url;
+        link.dataset.cloudInboxConversationId = conversation.id;
         link.className = `block border-l-4 px-4 py-4 transition ${isSelected ? 'border-[#128c42] bg-white shadow-sm' : 'border-transparent hover:bg-white'}`;
 
         const header = document.createElement('div');
@@ -707,22 +715,10 @@ if (cloudInbox) {
         return link;
     }
 
-    function updateConversations(conversations, pagination) {
-        if (total) total.textContent = pagination?.total ?? conversations.length;
-        if (!conversationList) return;
-        const nextSignature = JSON.stringify([conversations, pagination]);
-        if (conversationSignature === nextSignature) return;
-        conversationSignature = nextSignature;
-
-        const scrollTop = conversationList.scrollTop;
-        conversationList.replaceChildren();
-        if (conversations.length > 0) {
-            conversations.forEach((conversation) => conversationList.append(renderConversation(conversation)));
-            conversationList.scrollTop = scrollTop;
-            return;
-        }
-
+    function renderEmptyInbox() {
+        if (!conversationItems) return;
         const empty = document.createElement('div');
+        empty.dataset.cloudInboxEmpty = '';
         empty.className = 'px-5 py-16 text-center';
         const icon = document.createElement('div');
         icon.className = 'mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-lg text-[#128c42]';
@@ -734,7 +730,73 @@ if (cloudInbox) {
         description.className = 'mt-2 text-xs leading-5 text-slate-500';
         description.textContent = 'Signed Meta webhooks will create conversations here when customers message this number.';
         empty.append(icon, title, description);
-        conversationList.append(empty);
+        conversationItems.append(empty);
+    }
+
+    function setConversationLoadState(state) {
+        if (!conversationLoadMore) return;
+        const hidden = state === 'hidden';
+        const failed = state === 'error';
+        conversationLoadMore.classList.toggle('hidden', hidden);
+        conversationLoadSpinner?.classList.toggle('hidden', failed);
+        conversationLoadLabel?.classList.toggle('hidden', failed);
+        conversationLoadRetry?.classList.toggle('hidden', !failed);
+    }
+
+    function updateConversations(conversations, pagination, append = false) {
+        if (total) total.textContent = pagination?.total ?? conversations.length;
+        if (!conversationItems) return;
+
+        if (append) {
+            const renderedIds = new Set([...conversationItems.querySelectorAll('[data-cloud-inbox-conversation-id]')]
+                .map((item) => item.dataset.cloudInboxConversationId));
+            conversationItems.querySelector('[data-cloud-inbox-empty]')?.remove();
+            conversations.forEach((conversation) => {
+                if (!renderedIds.has(String(conversation.id))) conversationItems.append(renderConversation(conversation));
+            });
+            nextConversationPage = pagination?.has_more ? Number(pagination.current_page) + 1 : 0;
+            setConversationLoadState(nextConversationPage ? 'loading' : 'hidden');
+            return;
+        }
+
+        const nextSignature = JSON.stringify([conversations, pagination]);
+        if (conversationSignature === nextSignature) return;
+        conversationSignature = nextSignature;
+
+        const previousItems = [...conversationItems.querySelectorAll('[data-cloud-inbox-conversation-id]')];
+        const newestIds = new Set(conversations.map((conversation) => String(conversation.id)));
+        conversationItems.replaceChildren(...conversations.map(renderConversation));
+        previousItems.forEach((item) => {
+            if (!newestIds.has(item.dataset.cloudInboxConversationId)) conversationItems.append(item);
+        });
+
+        if (conversations.length === 0 && previousItems.length === 0) renderEmptyInbox();
+        setConversationLoadState(nextConversationPage ? 'loading' : 'hidden');
+    }
+
+    async function loadMoreConversations() {
+        if (!nextConversationPage || loadingMore || !conversationList) return;
+        loadingMore = true;
+        setConversationLoadState('loading');
+
+        try {
+            const url = new URL(cloudInbox.dataset.cloudInboxSnapshotUrl, window.location.origin);
+            url.searchParams.set('page', String(nextConversationPage));
+            const response = await fetch(url, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (!response.ok) throw new Error(`Inbox page failed with HTTP ${response.status}.`);
+            const snapshot = await response.json();
+            updateConversations(snapshot.conversations || [], snapshot.pagination, true);
+        } catch (error) {
+            setConversationLoadState('error');
+        } finally {
+            loadingMore = false;
+        }
     }
 
     function renderConversationMessage(message) {
@@ -1124,6 +1186,16 @@ if (cloudInbox) {
 
     document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('focus', refreshWhenVisible);
+    conversationLoadRetry?.addEventListener('click', loadMoreConversations);
+    if (conversationList && conversationLoadMore) {
+        const loadMoreObserver = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) loadMoreConversations();
+        }, {
+            root: conversationList,
+            rootMargin: '0px 0px 160px',
+        });
+        loadMoreObserver.observe(conversationLoadMore);
+    }
     replyText?.addEventListener('keydown', (event) => {
         const hasSendModifier = event.metaKey || event.ctrlKey;
         if (event.key !== 'Enter' || !hasSendModifier || event.shiftKey || event.altKey || event.isComposing) return;

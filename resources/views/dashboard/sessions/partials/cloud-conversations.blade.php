@@ -4,7 +4,6 @@
     $snapshotUrl = route('dashboard.sessions.conversations.snapshot', array_filter([
         'session' => $session,
         'selected' => $selectedConversation?->id,
-        'page' => request()->integer('page') ?: null,
     ]));
 @endphp
 
@@ -14,6 +13,7 @@
     data-cloud-inbox-snapshot-url="{{ $snapshotUrl }}"
     data-cloud-inbox-selected-id="{{ $selectedConversation?->id }}"
     data-cloud-inbox-mobile-detail="{{ $mobileShowingDetail ? 'true' : 'false' }}"
+    data-cloud-inbox-next-page="{{ $conversations->hasMorePages() ? 2 : '' }}"
 >
     <div class="h-full min-h-0 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside class="{{ $mobileShowingDetail ? 'hidden' : 'flex' }} h-full min-h-0 flex-col bg-slate-50/70 lg:flex lg:border-r lg:border-slate-200">
@@ -27,8 +27,9 @@
                     <span data-cloud-inbox-live-label>Live updates</span>
                 </div>
             </div>
-            <div class="min-h-0 flex-1 divide-y divide-slate-200 overflow-y-auto" data-cloud-inbox-conversations>
-                @forelse ($conversations as $conversation)
+            <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-cloud-inbox-conversations>
+                <div class="divide-y divide-slate-200" data-cloud-inbox-conversation-items>
+                    @forelse ($conversations as $conversation)
                     @php
                         $isOpen = $conversation->serviceWindowIsOpen();
                         $isSelected = $selectedConversation?->id === $conversation->id;
@@ -36,7 +37,7 @@
                             ? 'border-[#128c42] bg-white shadow-sm'
                             : 'border-transparent lg:border-[#128c42] lg:bg-white lg:shadow-sm';
                     @endphp
-                    <a href="{{ route('dashboard.sessions.conversations.show', [$session, $conversation]) }}" class="block border-l-4 px-4 py-4 transition {{ $isSelected ? $selectedTone : 'border-transparent hover:bg-white' }}">
+                    <a href="{{ route('dashboard.sessions.conversations.show', [$session, $conversation]) }}" data-cloud-inbox-conversation-id="{{ $conversation->id }}" class="block border-l-4 px-4 py-4 transition {{ $isSelected ? $selectedTone : 'border-transparent hover:bg-white' }}">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
                                 <div class="truncate text-sm font-semibold text-slate-900">{{ $conversation->customer_name ?: 'WhatsApp customer' }}</div>
@@ -49,17 +50,20 @@
                             <span>{{ $conversation->latest_message_at?->format('M j, H:i') ?: 'No activity' }}</span>
                         </div>
                     </a>
-                @empty
-                    <div class="px-5 py-16 text-center">
+                    @empty
+                    <div class="px-5 py-16 text-center" data-cloud-inbox-empty>
                         <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-lg text-[#128c42]">✦</div>
                         <h4 class="mt-4 text-sm font-semibold text-slate-900">No customer enquiries yet</h4>
                         <p class="mt-2 text-xs leading-5 text-slate-500">Signed Meta webhooks will create conversations here when customers message this number.</p>
                     </div>
-                @endforelse
+                    @endforelse
+                </div>
+                <div class="flex min-h-12 items-center justify-center border-t border-slate-200/70 bg-white/80 px-4 py-3 text-xs text-slate-500 {{ $conversations->hasMorePages() ? '' : 'hidden' }}" data-cloud-inbox-load-more aria-live="polite">
+                    <span class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-emerald-600 motion-reduce:animate-none" data-cloud-inbox-load-spinner></span>
+                    <span data-cloud-inbox-load-label>Loading more conversations…</span>
+                    <button type="button" class="hidden rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30" data-cloud-inbox-load-retry>Try again</button>
+                </div>
             </div>
-            @if ($conversations->hasPages())
-                <div class="shrink-0 border-t border-slate-200 bg-white px-4 py-3">{{ $conversations->links() }}</div>
-            @endif
         </aside>
 
         <div class="{{ $mobileShowingDetail ? 'flex' : 'hidden' }} h-full min-h-0 min-w-0 flex-col lg:flex">

@@ -90,6 +90,7 @@ class CloudConversationController extends Controller
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
                 'total' => $conversations->total(),
+                'has_more' => $conversations->hasMorePages(),
             ],
             'selected' => $selected ? $this->selectedConversationData($session, $selected) : null,
             'messages' => $selected
@@ -219,7 +220,9 @@ class CloudConversationController extends Controller
 
     private function render(Request $request, WhatsappSession $session, ?WhatsappConversation $selected): View
     {
-        $conversations = $this->conversationQuery($session)->paginate(30);
+        // The inbox always starts with the newest conversations. Older batches are
+        // fetched by the infinite-scroll snapshot endpoint as the user scrolls.
+        $conversations = $this->conversationQuery($session)->paginate(30, ['*'], 'page', 1);
 
         $messages = $selected
             ? $this->latestMessages($selected)

@@ -58,6 +58,9 @@ class CloudDashboardTest extends TestCase
             ->assertSee('data-compact-content-wrapper', false)
             ->assertSee('data-cloud-inbox-mobile-detail="false"', false)
             ->assertSee('data-cloud-inbox', false)
+            ->assertSee('data-cloud-inbox-load-more', false)
+            ->assertDontSee('Showing 1 to')
+            ->assertDontSee('&laquo; Previous', false)
             ->assertSee('data-cloud-inbox-reply-text', false)
             ->assertSee('data-cloud-inbox-file-input', false)
             ->assertSee('Attach image or document')
@@ -120,6 +123,7 @@ class CloudDashboardTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonPath('pagination.total', 2)
+            ->assertJsonPath('pagination.has_more', false)
             ->assertJsonPath('conversations.0.id', $newest->id)
             ->assertJsonPath('conversations.1.messages_count', 2)
             ->assertJsonPath('selected.id', $selected->id)
@@ -129,6 +133,35 @@ class CloudDashboardTest extends TestCase
             ->assertJsonPath('messages.0.media_url', route('dashboard.messages.media', $message))
             ->assertJsonPath('messages.1.id', $newestMessage->id)
             ->assertJsonPath('messages.1.body', 'Newest message');
+    }
+
+    public function test_conversation_snapshot_exposes_older_batches_for_infinite_scroll(): void
+    {
+        [$workspace, $session, $user] = $this->cloudSession('workspace_user');
+
+        foreach (range(1, 31) as $index) {
+            WhatsappConversation::create([
+                'workspace_id' => $workspace->id,
+                'whatsapp_session_id' => $session->id,
+                'customer_wa_id' => '8529000'.str_pad((string) $index, 4, '0', STR_PAD_LEFT),
+                'latest_message_at' => now()->subMinutes($index),
+            ]);
+        }
+
+        $url = route('dashboard.sessions.conversations.snapshot', $session);
+        $this->actingAs($user)
+            ->withSession(['dashboard_workspace_id' => $workspace->id])
+            ->getJson($url)
+            ->assertOk()
+            ->assertJsonCount(30, 'conversations')
+            ->assertJsonPath('pagination.current_page', 1)
+            ->assertJsonPath('pagination.has_more', true);
+
+        $this->getJson($url.'?page=2')
+            ->assertOk()
+            ->assertJsonCount(1, 'conversations')
+            ->assertJsonPath('pagination.current_page', 2)
+            ->assertJsonPath('pagination.has_more', false);
     }
 
     public function test_conversation_snapshot_is_authenticated_and_rejects_cross_session_or_workspace_access(): void
