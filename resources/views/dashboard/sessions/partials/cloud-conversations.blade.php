@@ -11,12 +11,13 @@
     class="h-[calc(100dvh-15rem)] min-h-[480px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:min-h-[560px]"
     data-cloud-inbox
     data-cloud-inbox-snapshot-url="{{ $snapshotUrl }}"
+    data-cloud-inbox-index-url="{{ route('dashboard.sessions.conversations.index', $session) }}"
     data-cloud-inbox-selected-id="{{ $selectedConversation?->id }}"
     data-cloud-inbox-mobile-detail="{{ $mobileShowingDetail ? 'true' : 'false' }}"
     data-cloud-inbox-next-page="{{ $conversations->hasMorePages() ? 2 : '' }}"
 >
     <div class="h-full min-h-0 lg:grid lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside class="{{ $mobileShowingDetail ? 'hidden' : 'flex' }} h-full min-h-0 flex-col bg-slate-50/70 lg:flex lg:border-r lg:border-slate-200">
+        <aside class="{{ $mobileShowingDetail ? 'hidden' : 'flex' }} h-full min-h-0 flex-col bg-slate-50/70 lg:flex lg:border-r lg:border-slate-200" data-cloud-inbox-list-panel>
             <div class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4">
                 <div>
                     <h3 class="font-semibold text-slate-900">Customer inbox</h3>
@@ -66,11 +67,11 @@
             </div>
         </aside>
 
-        <div class="{{ $mobileShowingDetail ? 'flex' : 'hidden' }} h-full min-h-0 min-w-0 flex-col lg:flex">
+        <div class="{{ $mobileShowingDetail ? 'flex' : 'hidden' }} h-full min-h-0 min-w-0 flex-col lg:flex" data-cloud-inbox-detail-panel>
             @if ($selectedConversation)
                 <header class="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
                     <div class="flex min-w-0 items-start gap-2.5">
-                        <a href="{{ route('dashboard.sessions.conversations.index', $session) }}" class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 lg:hidden" aria-label="Back to customer inbox" title="Back to customer inbox">
+                        <a href="{{ route('dashboard.sessions.conversations.index', $session) }}" class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 lg:hidden" aria-label="Back to customer inbox" title="Back to customer inbox" data-cloud-inbox-mobile-back>
                             <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true"><path d="m14.7 5.3-1.4-1.4L5.2 12l8.1 8.1 1.4-1.4L9 13h10v-2H9l5.7-5.7Z"/></svg>
                         </a>
                         <div class="min-w-0">

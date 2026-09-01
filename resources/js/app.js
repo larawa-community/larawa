@@ -619,9 +619,12 @@ const cloudInbox = document.querySelector('[data-cloud-inbox]');
 if (cloudInbox) {
     const baseDelay = 5000;
     const maximumDelay = 30000;
-    const selectedId = cloudInbox.dataset.cloudInboxSelectedId || '';
-    const mobileShowingDetail = cloudInbox.dataset.cloudInboxMobileDetail === 'true';
+    let selectedId = cloudInbox.dataset.cloudInboxSelectedId || '';
+    let mobileShowingDetail = cloudInbox.dataset.cloudInboxMobileDetail === 'true';
     const conversationList = cloudInbox.querySelector('[data-cloud-inbox-conversations]');
+    const conversationListPanel = cloudInbox.querySelector('[data-cloud-inbox-list-panel]');
+    const conversationDetailPanel = cloudInbox.querySelector('[data-cloud-inbox-detail-panel]');
+    const mobileBack = cloudInbox.querySelector('[data-cloud-inbox-mobile-back]');
     const conversationItems = cloudInbox.querySelector('[data-cloud-inbox-conversation-items]');
     const conversationLoadMore = cloudInbox.querySelector('[data-cloud-inbox-load-more]');
     const conversationLoadSpinner = cloudInbox.querySelector('[data-cloud-inbox-load-spinner]');
@@ -654,6 +657,7 @@ if (cloudInbox) {
     let timer = null;
     let inFlight = false;
     let loadingMore = false;
+    let selectionVersion = 0;
     let nextConversationPage = Number(cloudInbox.dataset.cloudInboxNextPage || 0);
     let failures = 0;
     let conversationSignature = null;
@@ -713,6 +717,92 @@ if (cloudInbox) {
         link.append(header, meta);
 
         return link;
+    }
+
+    function updateConversationSelection() {
+        conversationItems?.querySelectorAll('[data-cloud-inbox-conversation-id]').forEach((item) => {
+            const isSelected = item.dataset.cloudInboxConversationId === String(selectedId)
+                && (mobileShowingDetail || window.matchMedia('(min-width: 1024px)').matches);
+            item.classList.remove('lg:border-[#128c42]', 'lg:bg-white', 'lg:shadow-sm');
+            item.classList.toggle('border-[#128c42]', isSelected);
+            item.classList.toggle('bg-white', isSelected);
+            item.classList.toggle('shadow-sm', isSelected);
+            item.classList.toggle('border-transparent', !isSelected);
+            item.classList.toggle('hover:bg-white', !isSelected);
+            if (isSelected) item.setAttribute('aria-current', 'true');
+            else item.removeAttribute('aria-current');
+        });
+    }
+
+    function showMobileList() {
+        mobileShowingDetail = false;
+        conversationListPanel?.classList.remove('hidden');
+        conversationListPanel?.classList.add('flex');
+        conversationDetailPanel?.classList.add('hidden');
+        conversationDetailPanel?.classList.remove('flex');
+        updateConversationSelection();
+    }
+
+    function showMobileDetail() {
+        mobileShowingDetail = true;
+        conversationListPanel?.classList.add('hidden');
+        conversationListPanel?.classList.remove('flex');
+        conversationDetailPanel?.classList.remove('hidden');
+        conversationDetailPanel?.classList.add('flex');
+        updateConversationSelection();
+    }
+
+    function conversationSnapshotUrl(conversationId, page = null) {
+        const url = new URL(cloudInbox.dataset.cloudInboxSnapshotUrl, window.location.origin);
+        if (conversationId) url.searchParams.set('selected', String(conversationId));
+        else url.searchParams.delete('selected');
+        if (page) url.searchParams.set('page', String(page));
+        else url.searchParams.delete('page');
+        return url;
+    }
+
+    async function selectConversation(conversationId, showUrl, historyMode = 'push') {
+        if (String(conversationId) === selectedId
+            && (mobileShowingDetail || window.matchMedia('(min-width: 1024px)').matches)
+            && historyMode === 'push') return;
+
+        const previousId = selectedId;
+        const requestVersion = ++selectionVersion;
+        selectedId = String(conversationId);
+        updateConversationSelection();
+
+        try {
+            const snapshotUrl = conversationSnapshotUrl(selectedId);
+            const response = await fetch(snapshotUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (!response.ok) throw new Error(`Conversation failed with HTTP ${response.status}.`);
+
+            const snapshot = await response.json();
+            if (requestVersion !== selectionVersion) return;
+            cloudInbox.dataset.cloudInboxSnapshotUrl = snapshotUrl.toString();
+            messageSignature = null;
+            updateSelectedConversation(snapshot.selected);
+            updateConversationMessages(snapshot.messages || []);
+            failures = 0;
+            setLiveStatus('live');
+
+            if (window.matchMedia('(max-width: 1023px)').matches) showMobileDetail();
+            if (historyMode === 'push') {
+                window.history.pushState({ cloudInboxView: 'detail', conversationId: selectedId }, '', showUrl);
+            } else if (historyMode === 'replace') {
+                window.history.replaceState({ cloudInboxView: 'detail', conversationId: selectedId }, '', showUrl);
+            }
+        } catch (error) {
+            if (requestVersion !== selectionVersion) return;
+            selectedId = previousId;
+            updateConversationSelection();
+            setLiveStatus('reconnecting');
+        }
     }
 
     function renderEmptyInbox() {
@@ -780,8 +870,7 @@ if (cloudInbox) {
         setConversationLoadState('loading');
 
         try {
-            const url = new URL(cloudInbox.dataset.cloudInboxSnapshotUrl, window.location.origin);
-            url.searchParams.set('page', String(nextConversationPage));
+            const url = conversationSnapshotUrl(selectedId, nextConversationPage);
             const response = await fetch(url, {
                 credentials: 'same-origin',
                 headers: {
@@ -1147,8 +1236,9 @@ if (cloudInbox) {
         }
 
         inFlight = true;
+        const requestedSelectedId = selectedId;
         try {
-            const response = await fetch(cloudInbox.dataset.cloudInboxSnapshotUrl, {
+            const response = await fetch(conversationSnapshotUrl(requestedSelectedId), {
                 credentials: 'same-origin',
                 headers: {
                     Accept: 'application/json',
@@ -1164,8 +1254,10 @@ if (cloudInbox) {
             }
 
             updateConversations(snapshot.conversations || [], snapshot.pagination);
-            updateSelectedConversation(snapshot.selected);
-            updateConversationMessages(snapshot.messages || []);
+            if (requestedSelectedId === selectedId) {
+                updateSelectedConversation(snapshot.selected);
+                updateConversationMessages(snapshot.messages || []);
+            }
             failures = 0;
             setLiveStatus('live');
             schedule(baseDelay);
@@ -1186,6 +1278,19 @@ if (cloudInbox) {
 
     document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('focus', refreshWhenVisible);
+    window.history.replaceState({
+        cloudInboxView: mobileShowingDetail || window.matchMedia('(min-width: 1024px)').matches ? 'detail' : 'list',
+        conversationId: selectedId || null,
+    }, '');
+    window.addEventListener('popstate', (event) => {
+        const state = event.state;
+        if (state?.cloudInboxView === 'list' && window.matchMedia('(max-width: 1023px)').matches) {
+            showMobileList();
+        } else if (state?.conversationId) {
+            const item = conversationItems?.querySelector(`[data-cloud-inbox-conversation-id="${state.conversationId}"]`);
+            selectConversation(state.conversationId, item?.href || window.location.href, 'none');
+        }
+    });
     conversationLoadRetry?.addEventListener('click', loadMoreConversations);
     if (conversationList && conversationLoadMore) {
         const loadMoreObserver = new IntersectionObserver((entries) => {
@@ -1215,8 +1320,20 @@ if (cloudInbox) {
         }
     });
     cloudInbox.addEventListener('click', (event) => {
+        const conversationLink = event.target.closest('[data-cloud-inbox-conversation-id]');
+        if (conversationLink && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+            event.preventDefault();
+            selectConversation(conversationLink.dataset.cloudInboxConversationId, conversationLink.href);
+            return;
+        }
         const imageTrigger = event.target.closest('[data-cloud-inbox-image-open]');
         if (imageTrigger) openImageViewer(imageTrigger);
+    });
+    mobileBack?.addEventListener('click', (event) => {
+        if (!window.matchMedia('(max-width: 1023px)').matches) return;
+        event.preventDefault();
+        showMobileList();
+        window.history.replaceState({ cloudInboxView: 'list', conversationId: selectedId || null }, '', cloudInbox.dataset.cloudInboxIndexUrl);
     });
     imageViewerClose?.addEventListener('click', closeImageViewer);
     imageZoomOut?.addEventListener('click', () => setImageZoom(imageZoom - 0.25));
