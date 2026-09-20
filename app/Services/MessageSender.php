@@ -114,7 +114,10 @@ class MessageSender
 
             throw $exception;
         } catch (ConnectionException|RequestException $exception) {
-            $status = $this->workerFailureStatus($exception);
+            $metaResponse = $session->isCloudApi() && $exception instanceof RequestException
+                ? $exception->response
+                : null;
+            $status = $metaResponse?->status() ?? $this->workerFailureStatus($exception);
             $messageText = $this->workerFailureMessage($exception, $session);
 
             if ($this->shouldTryCloudFallback($session, $exception)) {
@@ -146,7 +149,12 @@ class MessageSender
             MessageSendFailed::dispatch($message, $workspace, $session, $messageText, $payload, 'message_sender');
             $this->fallbacks->handle($message, $messageText, $payload, 'message_sender', $workspace, $session);
 
-            return new MessageSendResult($message->fresh(), $status, $messageText);
+            return new MessageSendResult(
+                $message->fresh(),
+                $status,
+                $messageText,
+                is_array($metaResponse?->json()) ? $metaResponse->json() : null,
+            );
         }
 
         $message = $this->finalizeSentMessage($workspace, $session, $session, $message, $storedPayload, $result);

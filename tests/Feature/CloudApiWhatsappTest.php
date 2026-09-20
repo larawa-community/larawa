@@ -535,6 +535,51 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertNotNull($message->delivered_at);
     }
 
+    public function test_official_message_api_preserves_meta_error_payload_and_http_status(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $cloud = $this->cloudSession($workspace);
+        [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Send templates', ['messages:send']);
+        $payload = ['error' => [
+            'message' => '(#132018) There’s an issue with the parameters in your template',
+            'type' => 'OAuthException',
+            'code' => 132018,
+            'error_data' => [
+                'messaging_product' => 'whatsapp',
+                'details' => 'Param text cannot have new-line/tab characters or more than 4 consecutive spaces',
+            ],
+            'fbtrace_id' => 'A9HdbvJE02wsziU3ZLwpGUB',
+        ]];
+
+        foreach ([400, 401, 403, 429, 500] as $status) {
+            Http::fake([
+                'https://graph.facebook.com/v25.0/phone-1/messages' => Http::response($payload, $status),
+            ]);
+
+            $this->withToken($apiKey)->postJson("/api/v1/sessions/{$cloud->uuid}/messages/template", [
+                'to' => '15551234567', 'name' => 'test', 'language' => 'en_US',
+            ])->assertStatus($status)->assertExactJson($payload);
+
+            $message = Message::latest('id')->firstOrFail();
+            $this->assertSame('failed', $message->status);
+            $this->assertSame($status, data_get($message->payload, 'worker_error.status'));
+            $this->assertSame(132018, data_get($message->payload, 'worker_error.code'));
+        }
+    }
+
+    public function test_official_message_connection_failure_remains_a_service_unavailable_error(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $cloud = $this->cloudSession($workspace);
+        [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Send templates', ['messages:send']);
+        Http::fake(['*' => Http::failedConnection()]);
+
+        $this->withToken($apiKey)->postJson("/api/v1/sessions/{$cloud->uuid}/messages/template", [
+            'to' => '15551234567', 'name' => 'test', 'language' => 'en_US',
+        ])->assertStatus(503)->assertJsonPath('data.status', 'failed')
+            ->assertJsonMissingPath('error');
+    }
+
     public function test_meta_rejection_details_are_saved_and_visible_in_message_log(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);

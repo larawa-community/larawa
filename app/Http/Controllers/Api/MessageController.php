@@ -239,6 +239,10 @@ class MessageController extends Controller
         $status = $respond ? $result->status : 200;
 
         if ($result->failed()) {
+            if ($result->providerErrorPayload !== null) {
+                return response()->json($result->providerErrorPayload, $status);
+            }
+
             return response()->json([
                 'message' => $result->error,
                 'data' => $result->message,

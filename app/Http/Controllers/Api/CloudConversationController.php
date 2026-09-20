@@ -177,6 +177,10 @@ class CloudConversationController extends Controller
     private function messageResponse(MessageSendResult $result): JsonResponse
     {
         if ($result->failed()) {
+            if ($result->providerErrorPayload !== null) {
+                return response()->json($result->providerErrorPayload, $result->status);
+            }
+
             return response()->json(['message' => $result->error, 'data' => $result->message], $result->status);
         }
 

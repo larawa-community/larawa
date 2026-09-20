@@ -10,6 +10,7 @@ class MessageSendResult
         public readonly Message $message,
         public readonly int $status,
         public readonly ?string $error = null,
+        public readonly ?array $providerErrorPayload = null,
     ) {}
 
     public function failed(): bool
