@@ -115,7 +115,7 @@ class MessageSender
             throw $exception;
         } catch (ConnectionException|RequestException $exception) {
             $status = $this->workerFailureStatus($exception);
-            $messageText = $this->workerFailureMessage($exception);
+            $messageText = $this->workerFailureMessage($exception, $session);
 
             if ($this->shouldTryCloudFallback($session, $exception)) {
                 $fallback = $this->tryCloudFallback($workspace, $session, $message, $payload, $storedPayload, $messageText);
@@ -130,6 +130,14 @@ class MessageSender
                     'worker_error' => [
                         'message' => $messageText,
                         'status' => $status,
+                        'source' => $exception instanceof ConnectionException
+                            ? 'connection'
+                            : ($session->isCloudApi() ? 'meta_api' : 'worker'),
+                        'http_status' => $exception instanceof RequestException ? $exception->response->status() : null,
+                        'code' => $exception instanceof RequestException ? $exception->response->json('error.code') : null,
+                        'error_subcode' => $exception instanceof RequestException ? $exception->response->json('error.error_subcode') : null,
+                        'details' => $exception instanceof RequestException ? $exception->response->json('error.error_data.details') : null,
+                        'fbtrace_id' => $exception instanceof RequestException ? $exception->response->json('error.fbtrace_id') : null,
                     ],
                 ]),
             ]);
@@ -249,13 +257,13 @@ class MessageSender
         return ($result['status'] ?? null) === 'sent' ? 'pending' : ($result['status'] ?? 'pending');
     }
 
-    private function workerFailureMessage(ConnectionException|RequestException $exception): string
+    private function workerFailureMessage(ConnectionException|RequestException $exception, WhatsappSession $session): string
     {
         if ($exception instanceof RequestException) {
             return $exception->response->json('message') ?: $exception->response->json('error.message') ?: 'WhatsApp provider request failed.';
         }
 
-        return 'WhatsApp worker is unreachable.';
+        return $session->isCloudApi() ? 'Meta Cloud API is unreachable.' : 'WhatsApp worker is unreachable.';
     }
 
     private function shouldTryCloudFallback(WhatsappSession $session, ConnectionException|RequestException $exception): bool

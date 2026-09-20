@@ -535,6 +535,71 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertNotNull($message->delivered_at);
     }
 
+    public function test_meta_rejection_details_are_saved_and_visible_in_message_log(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $user = User::factory()->create();
+        $workspace->users()->attach($user, ['role' => 'owner']);
+        $cloud = $this->cloudSession($workspace);
+        Http::fake([
+            'https://graph.facebook.com/v25.0/phone-1/messages' => Http::response(['error' => [
+                'message' => 'Template parameter count mismatch',
+                'code' => 132000,
+                'error_subcode' => 123,
+                'error_data' => ['details' => 'Expected 4 parameters, received 1.'],
+                'fbtrace_id' => 'trace-test-123',
+                'access_token' => 'must-not-be-stored',
+            ]], 400),
+        ]);
+
+        $result = app(MessageSender::class)->send($workspace, $cloud, [
+            'type' => 'template', 'to' => '15551234567', 'name' => 'test', 'language' => 'en_US',
+        ]);
+        $message = $result->message->fresh();
+        $this->assertSame('failed', $message->status);
+        $this->assertSame(400, data_get($message->payload, 'worker_error.http_status'));
+        $this->assertSame(132000, data_get($message->payload, 'worker_error.code'));
+        $this->assertStringNotContainsString('must-not-be-stored', json_encode($message->payload));
+
+        $this->actingAs($user)->get(route('dashboard.messages.index'))->assertOk()
+            ->assertSee('Meta API rejected the request')
+            ->assertSee('Template parameter count mismatch')
+            ->assertSee('132000')->assertSee('400')
+            ->assertSee('Expected 4 parameters, received 1.')
+            ->assertSee('trace-test-123');
+    }
+
+    public function test_message_log_displays_existing_delivery_validation_and_legacy_errors_safely(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $user = User::factory()->create();
+        $workspace->users()->attach($user, ['role' => 'owner']);
+        $cloud = $this->cloudSession($workspace);
+        foreach ([
+            ['meta_status' => ['errors' => [
+                ['code' => 131026, 'message' => 'Message undeliverable', 'error_data' => ['details' => '<script>alert(1)</script>']],
+                ['code' => 131049, 'title' => 'Second delivery error'],
+            ]]],
+            ['provider_error' => ['message' => 'Validation failed.', 'errors' => ['to' => ['Recipient is invalid.']]]],
+            ['worker_error' => ['message' => 'Legacy provider error', 'status' => 502]],
+            [],
+        ] as $payload) {
+            Message::create([
+                'workspace_id' => $workspace->id, 'whatsapp_session_id' => $cloud->id,
+                'direction' => 'outgoing', 'type' => 'template', 'status' => 'error', 'payload' => $payload,
+            ]);
+        }
+        $this->actingAs($user)->get(route('dashboard.messages.index'))->assertOk()
+            ->assertSee('Meta delivery failed')->assertSee('131026')
+            ->assertSee('Second delivery error')->assertSee('Recipient is invalid.')
+            ->assertSee('Legacy provider error')->assertSee('No failure details were recorded')
+            ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false)
+            ->assertDontSee('<script>alert(1)</script>', false);
+
+        $sent = new Message(['status' => 'sent', 'payload' => ['worker_error' => ['message' => 'Old error']]]);
+        $this->assertSame([], $sent->failureDetails());
+    }
+
     private function cloudSession(Workspace $workspace): WhatsappSession
     {
         $session = WhatsappSession::create([
