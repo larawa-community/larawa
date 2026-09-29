@@ -2,7 +2,11 @@ openapi: 3.1.0
 info:
   title: LaraWA API
   version: 13.2.0
-  description: Self-hosted WhatsApp API gateway supporting workspace-enabled Meta Official Cloud API and whatsapp-web.js Wrapper transports.
+  description: >-
+    Self-hosted WhatsApp API gateway supporting workspace-enabled Meta Official Cloud API and whatsapp-web.js Wrapper transports.
+    Official Cloud API message sends (including conversation sends) return Meta's original HTTP error status and JSON payload when Meta rejects the send or media upload.
+    These responses contain Meta's top-level error object instead of LaraWA's message/data envelope. Connection failures remain HTTP 503; local validation remains HTTP 422.
+    Bulk sends retain their HTTP 202 envelope, with each failed item's Meta JSON payload in the results array.
 servers:
   - url: http://localhost:8080/api/v1
 security:
@@ -801,6 +805,9 @@ paths:
                 idempotency_key: { type: string }
       responses:
         "202": { description: Template accepted by Meta }
+        "400": { description: Meta rejected the request; response is the original Meta JSON error payload }
+        "503": { description: Unable to connect to Meta, or Meta returned HTTP 503 }
+        default: { description: Meta HTTP error status and original JSON error payload }
         "422": { description: Session or template payload is invalid }
   /sessions/{session}/conversations:
     get:
