@@ -62,7 +62,21 @@
                             <td class="px-5 py-4">{{ $message->whatsappSession?->name ?: '-' }}</td>
                             <td class="px-5 py-4">{{ $message->direction }}</td>
                             <td class="px-5 py-4">{{ $message->type }}</td>
-                            <td class="px-5 py-4">{{ $message->status }}</td>
+                            <td class="px-5 py-4">
+                                {{ $message->status }}
+                                @if ($failures = $message->failureDetails())
+                                    <details class="mt-2 min-w-64 max-w-lg whitespace-normal text-xs text-red-700">
+                                        <summary class="cursor-pointer font-semibold">Failure details</summary>
+                                        @foreach ($failures as $failure)
+                                            <dl class="mt-2 space-y-1 break-words">
+                                                @foreach ($failure as $label => $value)
+                                                    <div><dt class="inline font-semibold">{{ $label }}:</dt> <dd class="inline">{{ $value }}</dd></div>
+                                                @endforeach
+                                            </dl>
+                                        @endforeach
+                                    </details>
+                                @endif
+                            </td>
                             <td class="max-w-md truncate px-5 py-4">{{ $message->body ?: $message->wa_message_id }}</td>
                             <td class="px-5 py-4 text-right">
                                 @if ($message->media_path)
