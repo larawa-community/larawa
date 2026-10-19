@@ -6,6 +6,7 @@ use App\Jobs\ProcessMetaWhatsappWebhook;
 use App\Models\MetaWebhookReceipt;
 use App\Models\WhatsappCloudConfig;
 use App\Models\WhatsappSession;
+use App\Services\MetaWebhookToken;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,13 @@ class MetaWhatsappWebhookController extends Controller
         if ($session) {
             abort_unless($session->isCloudApi() && $session->workspace?->allowsSessionType($session->type), 404);
         }
-        $token = (string) config('larawa.meta.verify_token');
+        try {
+            $token = app(MetaWebhookToken::class)->value();
+        } catch (\RuntimeException $exception) {
+            report($exception);
+
+            return response('Webhook verification is temporarily unavailable.', 503);
+        }
         $provided = (string) $request->query('hub_verify_token', $request->query('hub.verify_token', ''));
         $mode = (string) $request->query('hub_mode', $request->query('hub.mode', ''));
         $challenge = (string) $request->query('hub_challenge', $request->query('hub.challenge', ''));

@@ -1,6 +1,9 @@
 <x-layouts.app :workspace="$workspace" title="System Settings">
     <div class="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div class="space-y-6">
+            <form id="regenerate-meta-token" method="POST" action="{{ route('dashboard.settings.meta-token.regenerate') }}" onsubmit="return confirm('Revoke the current verify token and generate a replacement? You must copy the new token into your Meta app.');">
+                @csrf
+            </form>
             <nav class="rounded-lg border border-slate-200 bg-white px-5 py-4" aria-label="Settings sections">
                 <div class="flex flex-wrap gap-2 text-sm">
                     <a href="#settings-diagnostics" class="rounded-md border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50">Diagnostics</a>
@@ -70,7 +73,7 @@
                                 <div class="border-b border-slate-100 px-5 py-4 last:border-b-0">
                                     <h3 class="text-sm font-semibold text-slate-900">{{ $section['label'] }}</h3>
                                     @if ($section['label'] === 'Official Meta Cloud API')
-                                        <p class="mt-2 text-sm text-slate-500">One Meta app serves all Official sessions across all workspaces. Set the App ID and App Secret below. LaraWA generates the verify token for you. Save and apply runtime settings, then use this callback URL and the same verify token in Meta. Subscribe to the messages field and subscribe the app to each WABA.</p>
+                                        <p class="mt-2 text-sm text-slate-500">One Meta app serves all Official sessions across all workspaces. Set the App ID and App Secret below. LaraWA generates and stores the verify token in the database. Save and apply runtime settings, then use this callback URL and the same verify token in Meta. Subscribe to the messages field and subscribe the app to each WABA.</p>
                                         <label class="mt-3 block text-sm font-medium" for="meta-site-callback">Meta App webhook callback URL</label>
                                         <input id="meta-site-callback" readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook') }}" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm">
                                     @endif

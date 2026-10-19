@@ -222,7 +222,7 @@ Configure the shared Meta app once under **System Settings → Application Setti
 
 - `META_APP_ID`: the site's Facebook/Meta App ID, also used for template sample uploads.
 - `META_APP_SECRET`: the same app's secret, used to verify webhook signatures.
-- `META_WEBHOOK_VERIFY_TOKEN`: generated and saved automatically when a platform administrator opens System Settings. Use **Copy token** to paste it into Meta. It is read-only and stays unchanged when settings are saved or the page is refreshed. Existing configured tokens are preserved.
+- `META_WEBHOOK_VERIFY_TOKEN`: generated automatically and stored encrypted in the database. Use **Copy token** to paste it into Meta. **Revoke and regenerate** immediately replaces the token; copy the replacement into Meta afterward. Only platform administrators can access or rotate it. No runtime cache rebuild is required for token changes. An existing environment or legacy storage token is imported only when the database setting is first created; later rotations never fall back to the old token. Run `php artisan migrate --force` during deployment to create the settings table.
 
 Save Settings, apply the pending runtime settings, and restart long-running queue workers. Copy the callback URL displayed there into Meta:
 

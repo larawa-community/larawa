@@ -141,33 +141,6 @@ class EnvironmentFile
         }
     }
 
-    public function ensureMetaWebhookVerifyToken(): bool
-    {
-        $this->assertWritable();
-        $lock = fopen($this->path().'.meta-token.lock', 'c');
-        if ($lock === false) {
-            throw new RuntimeException('Unable to lock Meta webhook token configuration.');
-        }
-
-        try {
-            if (! flock($lock, LOCK_EX)) {
-                throw new RuntimeException('Unable to lock Meta webhook token configuration.');
-            }
-            if (filled($this->values()['META_WEBHOOK_VERIFY_TOKEN'] ?? null)) {
-                return false;
-            }
-
-            // Preserve a token provided by the deployment environment, if present.
-            $token = config('larawa.meta.verify_token');
-            $this->update(['META_WEBHOOK_VERIFY_TOKEN' => filled($token) ? $token : bin2hex(random_bytes(32))]);
-
-            return true;
-        } finally {
-            flock($lock, LOCK_UN);
-            fclose($lock);
-        }
-    }
-
     public function update(array $values): void
     {
         $this->assertWritable();

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Services\ConfigurationDiagnostics;
 use App\Services\EnvironmentFile;
+use App\Services\MetaWebhookToken;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -183,10 +184,6 @@ class SettingsController extends Controller
         $workspace = $this->workspace($request);
         Gate::forUser($request->user())->authorize('platform.admin');
 
-        if ($environment->ensureMetaWebhookVerifyToken()) {
-            $this->markRuntimeApplyPending($environment);
-        }
-
         return view('dashboard.settings.index', [
             'workspace' => $workspace,
             'diagnostics' => $diagnostics->summary(),
@@ -197,10 +194,6 @@ class SettingsController extends Controller
     public function update(Request $request, EnvironmentFile $environment): RedirectResponse
     {
         Gate::forUser($request->user())->authorize('platform.admin');
-
-        if ($environment->ensureMetaWebhookVerifyToken()) {
-            $this->markRuntimeApplyPending($environment);
-        }
 
         $data = $request->validate([
             'env' => ['required', 'array'],
@@ -231,6 +224,14 @@ class SettingsController extends Controller
         }
 
         return back()->with('status', 'Runtime environment settings are already up to date.');
+    }
+
+    public function regenerateMetaToken(Request $request, MetaWebhookToken $tokens): RedirectResponse
+    {
+        Gate::forUser($request->user())->authorize('platform.admin');
+        $tokens->regenerate();
+
+        return redirect()->route('dashboard.settings.index')->with('status', 'The previous Meta webhook verify token has been revoked. Copy the new token into your Meta app.');
     }
 
     public function showApply(Request $request, EnvironmentFile $environment): RedirectResponse|View
@@ -281,6 +282,14 @@ class SettingsController extends Controller
     {
         $example = $environment->exampleValues();
         $current = array_replace($example, $environment->values());
+        $metaTokenError = null;
+        try {
+            $current['META_WEBHOOK_VERIFY_TOKEN'] = app(MetaWebhookToken::class)->value();
+        } catch (\RuntimeException $exception) {
+            report($exception);
+            $current['META_WEBHOOK_VERIFY_TOKEN'] = '';
+            $metaTokenError = 'Unable to load the webhook verify token. Ensure database migrations have been run and the database is available, then reload this page.';
+        }
         $metadata = $environment->exampleMetadata();
         $primaryKeys = collect(self::GROUPS)->flatMap(fn (array $group) => $this->groupKeys($group))->unique()->all();
         $advancedKeys = collect(array_keys($current))
@@ -292,6 +301,7 @@ class SettingsController extends Controller
             ->all();
 
         return [
+            'metaTokenError' => $metaTokenError,
             'envPath' => $environment->path(),
             'environmentOverview' => [
                 'Environment file' => $environment->path(),

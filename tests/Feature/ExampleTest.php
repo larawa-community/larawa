@@ -928,7 +928,7 @@ class ExampleTest extends TestCase
     {
         $envPath = tempnam(sys_get_temp_dir(), 'larawa-settings-diagnostics-');
         file_put_contents($envPath, "META_WEBHOOK_VERIFY_TOKEN=existing-facebook-token\n");
-        config(['larawa.env_path' => $envPath]);
+        config(['larawa.env_path' => $envPath, 'larawa.meta.verify_token' => 'existing-facebook-token']);
         $this->beforeApplicationDestroyed(function () use ($envPath): void {
             @unlink($envPath);
             @unlink($envPath.'.meta-token.lock');

@@ -2,11 +2,15 @@
     <label class="text-sm font-medium text-slate-700" for="env_{{ $field['key'] }}">{{ $field['key'] }}</label>
 
     @if ($field['key'] === 'META_WEBHOOK_VERIFY_TOKEN')
+        @if ($metaTokenError)
+            <p role="alert" class="mt-2 text-sm text-red-700">{{ $metaTokenError }}</p>
+        @endif
         <div class="mt-2 flex gap-2">
             <input id="env_META_WEBHOOK_VERIFY_TOKEN" type="text" readonly value="{{ $field['value'] }}" onclick="this.select()" class="min-w-0 flex-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-sm">
-            <button type="button" data-copy-meta-token class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Copy token</button>
+            <button type="button" @disabled($metaTokenError) data-copy-meta-token class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Copy token</button>
         </div>
-        <p data-meta-token-copy-status role="status" class="mt-1 text-xs text-slate-500">Generated and saved by LaraWA. Apply pending runtime settings before pasting this token into your Meta app.</p>
+        <p data-meta-token-copy-status role="status" class="mt-1 text-xs text-slate-500">Stored encrypted in the database. Copy this token into your Meta app.</p>
+        <button type="submit" form="regenerate-meta-token" @disabled($metaTokenError) class="mt-2 rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Revoke and regenerate</button>
     @elseif ($field['type'] === 'boolean')
         <input type="hidden" name="env[{{ $field['key'] }}]" value="false">
         <label class="mt-2 flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm">
