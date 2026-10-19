@@ -374,7 +374,7 @@ class MetaWhatsappTemplateService
 
     private function uploadSampleMedia(WhatsappCloudConfig $config, array $media): string
     {
-        $appId = config('larawa.meta.app_id');
+        $appId = app(MetaAppSettings::class)->current()->app_id;
         if (! filled($appId)) {
             throw ValidationException::withMessages(['app_id' => 'Ask a platform administrator to set the Meta App ID in System Settings before uploading template sample media.']);
         }

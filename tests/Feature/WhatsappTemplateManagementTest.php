@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\ApiKeyService;
+use App\Services\MetaAppSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -142,7 +143,8 @@ class WhatsappTemplateManagementTest extends TestCase
 
     public function test_media_header_upload_uses_app_id_and_returns_the_meta_handle_without_caching(): void
     {
-        config(['larawa.meta.app_id' => 'app-1']);
+        config(['larawa.meta.app_id' => 'ignored-env-app']);
+        app(MetaAppSettings::class)->save('app-1', 'shared-secret');
         [$workspace, $session] = $this->cloudSession(['app_id' => 'ignored-legacy-app']);
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
         Http::fake([

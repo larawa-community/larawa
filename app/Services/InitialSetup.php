@@ -103,6 +103,7 @@ class InitialSetup
             $environment->update($installedEnvironment);
             $this->assertEnvironmentFileWritten($environment, installed: true);
             $this->applyRuntimeConfig($installedEnvironment);
+            app(SiteSettings::class)->save(app(SiteSettings::class)->defaults());
 
             $report('storage', 'Creating the public storage link.', 92);
             $this->runArtisan('storage:link', ['--force' => true, '--no-interaction' => true]);

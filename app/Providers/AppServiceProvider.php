@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\SiteSettings;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +35,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('larawa.installed') && Schema::hasTable('site_settings')) {
+            app(SiteSettings::class)->apply();
+        }
+
         if (config('app.force_https')) {
             URL::forceScheme('https');
         }

@@ -218,13 +218,13 @@ Webhook signing secrets are encrypted at rest when `APP_KEY` is configured. Exis
 
 ## Official Meta WhatsApp Cloud API
 
-Configure the shared Meta app once under **System Settings → Application Settings → Official Meta Cloud API** (platform administrators only):
+Configure the shared Meta app once under **System Settings → Meta App Settings** (platform administrators only):
 
-- `META_APP_ID`: the site's Facebook/Meta App ID, also used for template sample uploads.
-- `META_APP_SECRET`: the same app's secret, used to verify webhook signatures.
+- **Meta App ID**: the site's Facebook/Meta App ID, stored in the database and used for template sample uploads.
+- **Meta App Secret**: stored encrypted in the database and used to verify webhook signatures. Leave the field blank when saving to keep the current secret.
 - `META_WEBHOOK_VERIFY_TOKEN`: generated automatically and stored encrypted in the database. Use **Copy token** to paste it into Meta. **Revoke and regenerate** immediately replaces the token; copy the replacement into Meta afterward. Only platform administrators can access or rotate it. No runtime cache rebuild is required for token changes. An existing environment or legacy storage token is imported only when the database setting is first created; later rotations never fall back to the old token. Run `php artisan migrate --force` during deployment to create the settings table.
 
-Save Settings, apply the pending runtime settings, and restart long-running queue workers. Copy the callback URL displayed there into Meta:
+Click **Save Meta settings**. Meta credentials take effect immediately without writing `.env`, applying runtime settings, or restarting workers. Existing environment credentials are imported once; the database becomes authoritative. Run database migrations when upgrading. Copy the callback URL displayed there into Meta:
 
 ```text
 https://your-domain/api/meta/whatsapp/webhook
@@ -234,7 +234,7 @@ Subscribe to the `messages` field and subscribe the app to each customer's WABA.
 
 When upgrading from session-level app settings, copy the intended app credentials into System Settings before switching Meta to the site callback and shared verify token. Old session URLs remain aliases that use only the new site credentials; they no longer use session secrets or tokens. Existing database app fields are retained for recovery but ignored at runtime. Session APIs reject app settings and never return the shared verify token. All account access tokens must belong to the selected site app and have access to their respective WABAs. Sites previously using several Meta apps must consolidate those accounts onto the chosen app.
 
-The app secret is not sent to the message API. Per-session access tokens remain encrypted with `APP_KEY`. Shared Meta settings use the existing protected site environment configuration. Sending credentials can be configured independently of webhook setup; inbound delivery requires the shared app secret and successful callback verification.
+The app secret is not sent to the message API. Per-session access tokens remain encrypted with `APP_KEY`. Shared Meta secrets are encrypted with `APP_KEY` in the database. All dashboard settings are stored encrypted in the database. Only the initial setup writes `.env`. The database connection, `APP_KEY`, deployment environment, and trusted proxy configuration remain read-only bootstrap values; they are needed before database settings can be loaded. Database overrides load on application boot, including when Laravel config is cached. New requests pick up saved values automatically; restart long-running workers after changing runtime settings. No Apply Runtime step is required. Sending credentials can be configured independently of webhook setup; inbound delivery requires the shared app secret and successful callback verification.
 
 Template management requires a system-user access token with `whatsapp_business_management`; message sends require `whatsapp_business_messaging`. Template listing and detail pages fetch every result page directly from Meta and use the numeric Meta template ID in dashboard and API URLs. `GET .../templates/{template_id}` also returns a normalized `parameter_schema` for client-generated send forms. Direct sends should submit `template_id` plus those parameter keys; LaraWA derives the immutable template name and language from Meta. LaraWA does not write template responses to its local template table. The existing table is retained only as a non-destructive legacy schema artifact. Creating or editing a template submits it to Meta and returns the live response without changing the Cloud session's connection state when template-management permission is missing. The legacy `POST .../templates/sync` API route remains compatible but now performs a direct refresh without persisting template data.
 

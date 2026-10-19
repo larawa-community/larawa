@@ -6,6 +6,7 @@ use App\Jobs\ProcessMetaWhatsappWebhook;
 use App\Models\MetaWebhookReceipt;
 use App\Models\WhatsappCloudConfig;
 use App\Models\WhatsappSession;
+use App\Services\MetaAppSettings;
 use App\Services\MetaWebhookToken;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -52,12 +53,13 @@ class MetaWhatsappWebhookController extends Controller
             return response()->json(['message' => 'Invalid WhatsApp webhook payload.'], 400);
         }
 
-        if (! filled(config('larawa.meta.app_secret'))) {
+        $appSecret = app(MetaAppSettings::class)->current()->app_secret;
+        if (! filled($appSecret)) {
             return response()->json(['message' => 'Complete the Meta app settings before receiving webhooks.'], 409);
         }
 
         $signature = (string) $request->header('X-Hub-Signature-256');
-        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) config('larawa.meta.app_secret'));
+        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $appSecret);
         if ($signature === '' || ! hash_equals($expected, $signature)) {
             return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }

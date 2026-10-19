@@ -152,6 +152,7 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::get('/audit-logs', [LogController::class, 'audit'])->name('.audit.index');
         Route::get('/settings', [SettingsController::class, 'index'])->name('.settings.index');
         Route::patch('/settings', [SettingsController::class, 'update'])->name('.settings.update');
+        Route::patch('/settings/meta-app', [SettingsController::class, 'updateMeta'])->name('.settings.meta-app.update');
         Route::post('/settings/meta-webhook-token/regenerate', [SettingsController::class, 'regenerateMetaToken'])->name('.settings.meta-token.regenerate');
         Route::get('/settings/apply', [SettingsController::class, 'showApply'])->name('.settings.apply.show');
         Route::post('/settings/apply', [SettingsController::class, 'apply'])->name('.settings.apply');

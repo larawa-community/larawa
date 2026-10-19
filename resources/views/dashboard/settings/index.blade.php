@@ -6,14 +6,12 @@
             </form>
             <nav class="rounded-lg border border-slate-200 bg-white px-5 py-4" aria-label="Settings sections">
                 <div class="flex flex-wrap gap-2 text-sm">
+                    <a href="#settings-meta-app" class="rounded-md border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50">Meta App</a>
                     <a href="#settings-diagnostics" class="rounded-md border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50">Diagnostics</a>
                     @foreach ($settingGroups as $groupKey => $group)
                         <a href="#settings-{{ $groupKey }}" data-settings-section-link class="rounded-md border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50">{{ $group['label'] }}</a>
                     @endforeach
                     <a href="#settings-advanced" data-settings-section-link class="rounded-md border border-slate-200 px-3 py-2 font-medium text-slate-700 hover:bg-slate-50">Advanced Settings</a>
-                    @if ($runtimeApplyPending)
-                        <a href="{{ route('dashboard.settings.apply.show') }}" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 font-medium text-amber-800 hover:bg-amber-100">Apply Runtime</a>
-                    @endif
                 </div>
             </nav>
 
@@ -50,6 +48,29 @@
                 </div>
             </section>
 
+            <p class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">Settings are stored in the database. The initial database connection, application key, deployment environment, and proxy configuration remain bootstrap settings from installation and cannot be changed here. Saving settings never rewrites .env.</p>
+            <section id="settings-meta-app" class="rounded-lg border border-slate-200 bg-white p-5">
+                <h2 class="font-semibold">Meta App Settings</h2>
+                <p class="mt-1 text-sm text-slate-500">One Meta app serves all Official sessions. These settings are stored in the database and take effect immediately.</p>
+                <form method="POST" action="{{ route('dashboard.settings.meta-app.update') }}" class="mt-4 space-y-4">
+                    @csrf
+                    @method('PATCH')
+                    <label class="block text-sm font-medium">Meta App ID
+                        <input name="app_id" value="{{ old('app_id', $metaAppId) }}" required class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
+                    </label>
+                    <label class="block text-sm font-medium">Meta App Secret (webhook signing)
+                        <input name="app_secret" type="password" autocomplete="new-password" placeholder="{{ $metaAppSecretConfigured ? 'Configured — leave blank to keep current secret' : 'Enter the Meta App Secret' }}" class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
+                    </label>
+                    <button @disabled($metaTokenError) class="rounded-md bg-[#128c42] px-4 py-2 text-sm font-semibold text-white">Save Meta settings</button>
+                </form>
+                <div class="mt-5 space-y-4 border-t border-slate-200 pt-4">
+                    <label class="block text-sm font-medium">Meta App webhook callback URL
+                        <input readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook') }}" class="mt-2 block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-sm">
+                    </label>
+                    @include('dashboard.settings.partials.env-field', ['field' => ['key' => 'META_WEBHOOK_VERIFY_TOKEN', 'value' => $metaVerifyToken, 'comment' => '', 'example' => '']])
+                </div>
+            </section>
+
             <form method="POST" action="{{ route('dashboard.settings.update') }}" class="space-y-6">
                 @csrf
                 @method('PATCH')
@@ -72,11 +93,6 @@
                             @foreach ($group['sections'] as $section)
                                 <div class="border-b border-slate-100 px-5 py-4 last:border-b-0">
                                     <h3 class="text-sm font-semibold text-slate-900">{{ $section['label'] }}</h3>
-                                    @if ($section['label'] === 'Official Meta Cloud API')
-                                        <p class="mt-2 text-sm text-slate-500">One Meta app serves all Official sessions across all workspaces. Set the App ID and App Secret below. LaraWA generates and stores the verify token in the database. Save and apply runtime settings, then use this callback URL and the same verify token in Meta. Subscribe to the messages field and subscribe the app to each WABA.</p>
-                                        <label class="mt-3 block text-sm font-medium" for="meta-site-callback">Meta App webhook callback URL</label>
-                                        <input id="meta-site-callback" readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook') }}" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm">
-                                    @endif
                                     <div class="mt-4 grid gap-x-5 gap-y-4 md:grid-cols-2">
                                         @foreach ($section['fields'] as $field)
                                             @include('dashboard.settings.partials.env-field', ['field' => $field])
@@ -93,7 +109,7 @@
                         <div class="flex items-center justify-between gap-4">
                             <div>
                                 <h2 class="font-semibold">Advanced Settings</h2>
-                                <p class="mt-1 text-sm text-slate-500">Other runtime variables from `.env.example` and the active `.env` file.</p>
+                                <p class="mt-1 text-sm text-slate-500">Additional application settings stored in the database.</p>
                             </div>
                             <span class="text-sm font-semibold text-slate-400">
                                 <span class="group-open:hidden">Open</span>
@@ -110,17 +126,17 @@
 
                 <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4">
                     <div>
-                        <p class="text-sm font-medium">Environment file</p>
-                        <p class="mt-1 break-all font-mono text-xs text-slate-500">{{ $envPath }}</p>
+                        <p class="text-sm font-medium">Database settings</p>
+                        <p class="mt-1 break-all font-mono text-xs text-slate-500">Saved securely in the database</p>
                     </div>
-                    <button class="rounded-md bg-[#25d366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#128c42]">Save Settings</button>
+                    <button class="rounded-md bg-[#25d366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#128c42]">Save settings</button>
                 </div>
             </form>
 
         </div>
 
         <section class="rounded-lg border border-slate-200 bg-white p-5 xl:sticky xl:top-6 xl:self-start">
-            <h2 class="font-semibold">Environment Overview</h2>
+            <h2 class="font-semibold">Runtime Overview</h2>
             <dl class="mt-5 space-y-4">
                 @foreach ($environmentOverview as $label => $value)
                     <div>

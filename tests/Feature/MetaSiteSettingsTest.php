@@ -10,6 +10,7 @@ use App\Models\Workspace;
 use App\Services\ApiKeyService;
 use App\Services\EnvironmentFile;
 use App\Services\MetaWebhookToken;
+use App\Services\SiteSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -42,7 +43,7 @@ class MetaSiteSettingsTest extends TestCase
             $this->actingAs($manager)->patch(route('dashboard.settings.update'), ['env' => $settings])->assertForbidden();
             $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()
                 ->assertSee(url('/api/meta/whatsapp/webhook'))
-                ->assertSee('META_APP_ID')->assertSee('META_APP_SECRET')->assertSee('META_WEBHOOK_VERIFY_TOKEN');
+                ->assertSee('Meta App ID')->assertSee('Meta App Secret')->assertSee('META_WEBHOOK_VERIFY_TOKEN');
             $token = app(MetaWebhookToken::class)->value();
             $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $token);
             $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()
@@ -51,7 +52,7 @@ class MetaSiteSettingsTest extends TestCase
             $this->assertSame($token, app(MetaWebhookToken::class)->value());
             $this->actingAs($admin)->patch(route('dashboard.settings.update'), ['env' => $settings])
                 ->assertRedirect()->assertSessionHasNoErrors();
-            $this->assertSame(['META_APP_ID' => '123456789', 'META_APP_SECRET' => 'site-app-secret'], app(EnvironmentFile::class)->values());
+            $this->assertSame([], app(EnvironmentFile::class)->values());
             $this->assertSame($token, app(MetaWebhookToken::class)->value());
             config(['larawa.meta.verify_token' => $token]);
             $this->get('/api/meta/whatsapp/webhook?hub.mode=subscribe&hub.verify_token='.$token.'&hub.challenge=ok')->assertOk()->assertContent('ok');
@@ -130,6 +131,55 @@ class MetaSiteSettingsTest extends TestCase
         $this->get('/api/meta/whatsapp/webhook?hub.mode=subscribe&hub.verify_token='.$old.'&hub.challenge=ready')->assertForbidden();
         $this->get('/api/meta/whatsapp/webhook?hub.mode=subscribe&hub.verify_token='.$new.'&hub.challenge=ready')->assertOk()->assertContent('ready');
         $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()->assertSee($new)->assertSee('Revoke and regenerate');
+    }
+
+    public function test_meta_credentials_save_to_database_without_environment_writes_and_are_used_for_signatures(): void
+    {
+        $environment = $this->mock(EnvironmentFile::class)->makePartial();
+        $environment->shouldReceive('update')->never();
+        $environment->shouldReceive('assertWritable')->never();
+        config(['larawa.meta.app_secret' => 'old-env-secret', 'larawa.meta.app_id' => '999']);
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $admin = User::factory()->create();
+        $workspace->users()->attach($admin, ['role' => 'site_admin']);
+        $manager = User::factory()->create();
+        $workspace->users()->attach($manager, ['role' => 'workspace_admin']);
+        $url = route('dashboard.settings.meta-app.update');
+        $data = ['app_id' => '123456', 'app_secret' => 'new-db-secret'];
+        $this->actingAs($manager)->patch($url, $data)->assertForbidden();
+        $this->actingAs($admin)->patch($url, ['app_id' => 'invalid', 'app_secret' => 'do-not-flash'])
+            ->assertRedirect()->assertSessionHasErrors('app_id')->assertSessionMissing('_old_input.app_secret');
+        $this->flushSession();
+        $this->actingAs($admin)->patch($url, $data)->assertRedirect()->assertSessionHasNoErrors();
+        $settings = MetaAppSetting::findOrFail(1);
+        $this->assertSame('123456', $settings->app_id);
+        $this->assertSame('new-db-secret', $settings->app_secret);
+        $this->assertNotSame('new-db-secret', DB::table('meta_app_settings')->value('app_secret'));
+        $this->assertArrayNotHasKey('app_secret', $settings->toArray());
+        $this->actingAs($admin)->patch($url, ['app_id' => '123456', 'app_secret' => ''])->assertRedirect();
+        $this->assertSame('new-db-secret', $settings->fresh()->app_secret);
+        $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()
+            ->assertSee('123456')->assertDontSee('new-db-secret')->assertDontSee('name="env[META_APP_SECRET]"', false);
+        $raw = json_encode(['object' => 'whatsapp_business_account', 'entry' => []]);
+        foreach (['old-env-secret' => 401, 'new-db-secret' => 200] as $secret => $status) {
+            $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, $secret),
+            ], $raw)->assertStatus($status);
+        }
+    }
+
+    public function test_runtime_settings_save_without_writing_environment(): void
+    {
+        $environment = $this->mock(EnvironmentFile::class)->makePartial();
+        $environment->shouldReceive('values')->andReturn(['APP_URL' => 'https://old.example.test']);
+        $environment->shouldReceive('update')->never();
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $admin = User::factory()->create();
+        $workspace->users()->attach($admin, ['role' => 'site_admin']);
+        $this->actingAs($admin)->patch(route('dashboard.settings.update'), ['env' => ['APP_URL' => 'https://new.example.test']])
+            ->assertRedirect()->assertSessionHas('status');
+        $this->assertSame('https://new.example.test', app(SiteSettings::class)->values()['APP_URL']);
     }
 
     public function test_site_callback_can_be_verified_without_any_session_and_fails_closed_without_configuration(): void

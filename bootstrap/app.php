@@ -83,6 +83,7 @@ $app = Application::configure(basePath: $basePath)
         $middleware->prependToPriorityList([ThrottleRequests::class, ThrottleRequestsWithRedis::class], AuthenticateApiKey::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash(['app_secret']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );

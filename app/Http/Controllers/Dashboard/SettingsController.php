@@ -5,35 +5,32 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Services\ConfigurationDiagnostics;
 use App\Services\EnvironmentFile;
+use App\Services\MetaAppSettings;
 use App\Services\MetaWebhookToken;
+use App\Services\SiteSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use Throwable;
 
 class SettingsController extends Controller
 {
     private const GROUPS = [
         'application' => [
             'label' => 'Application Settings',
-            'description' => 'Public URL, runtime mode, HTTPS proxy behavior, worker endpoints, and LaraWA limits.',
+            'description' => 'Public URL, runtime backends, worker endpoints, and LaraWA limits.',
             'sections' => [
                 [
                     'label' => 'Identity and URL',
                     'keys' => [
                         'APP_NAME',
-                        'APP_ENV',
                         'APP_DEBUG',
+                        'LARAWA_CLOUD_ONLY',
                         'APP_URL',
                         'APP_TIMEZONE',
                         'APP_FORCE_HTTPS',
-                        'TRUSTED_PROXIES',
                         'LARAWA_DEFAULT_WORKSPACE',
-                        'LARAWA_INSTALLED',
                     ],
                 ],
                 [
@@ -55,9 +52,6 @@ class SettingsController extends Controller
                 [
                     'label' => 'Official Meta Cloud API',
                     'keys' => [
-                        'META_APP_ID',
-                        'META_APP_SECRET',
-                        'META_WEBHOOK_VERIFY_TOKEN',
                         'META_GRAPH_API_URL',
                         'META_GRAPH_API_VERSION',
                         'META_WHATSAPP_TIMEOUT',
@@ -73,32 +67,6 @@ class SettingsController extends Controller
                         'WEBHOOK_TIMEOUT',
                         'WEBHOOK_RETRY_ATTEMPTS',
                         'WEBHOOK_RETRY_BACKOFF',
-                    ],
-                ],
-            ],
-        ],
-        'database' => [
-            'label' => 'Databases',
-            'description' => 'Laravel database connection and Docker PostgreSQL service defaults.',
-            'sections' => [
-                [
-                    'label' => 'Laravel Connection',
-                    'keys' => [
-                        'DB_CONNECTION',
-                        'DB_DATABASE',
-                        'DB_HOST',
-                        'DB_PORT',
-                        'DB_USERNAME',
-                        'DB_PASSWORD',
-                        'DB_SSLMODE',
-                    ],
-                ],
-                [
-                    'label' => 'Docker PostgreSQL Defaults',
-                    'keys' => [
-                        'POSTGRES_DB',
-                        'POSTGRES_USER',
-                        'POSTGRES_PASSWORD',
                     ],
                 ],
             ],
@@ -159,6 +127,7 @@ class SettingsController extends Controller
     ];
 
     private const BOOLEAN_KEYS = [
+        'LARAWA_CLOUD_ONLY',
         'APP_DEBUG',
         'APP_FORCE_HTTPS',
         'LARAWA_INSTALLED',
@@ -191,20 +160,31 @@ class SettingsController extends Controller
         ]);
     }
 
-    public function update(Request $request, EnvironmentFile $environment): RedirectResponse
+    public function update(Request $request, SiteSettings $settings): RedirectResponse
     {
         Gate::forUser($request->user())->authorize('platform.admin');
 
         $data = $request->validate([
             'env' => ['required', 'array'],
             'env.*' => ['nullable', 'string', 'max:1000'],
+            'env.APP_KEY' => ['prohibited'],
+            'env.APP_ENV' => ['prohibited'],
+            'env.TRUSTED_PROXIES' => ['prohibited'],
+            'env.LARAWA_INSTALLED' => ['prohibited'],
+            'env.DB_CONNECTION' => ['prohibited'],
+            'env.DB_DATABASE' => ['prohibited'],
+            'env.DB_HOST' => ['prohibited'],
+            'env.DB_PORT' => ['prohibited'],
+            'env.DB_USERNAME' => ['prohibited'],
+            'env.DB_PASSWORD' => ['prohibited'],
+            'env.DB_SSLMODE' => ['prohibited'],
         ]);
 
-        $allowed = array_flip($environment->writableKeys());
+        $allowed = array_flip($settings->keys());
         $values = [];
 
         foreach (($data['env'] ?? []) as $key => $value) {
-            if (! isset($allowed[$key]) || $key === 'META_WEBHOOK_VERIFY_TOKEN') {
+            if (! isset($allowed[$key]) || in_array($key, ['META_APP_ID', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN'], true)) {
                 continue;
             }
 
@@ -214,16 +194,21 @@ class SettingsController extends Controller
         }
 
         $this->validateKnownValues($values);
-        $changed = $this->environmentWillChange($environment, $values);
-        $environment->update($values);
+        $settings->save($values);
 
-        if ($changed) {
-            $this->markRuntimeApplyPending($environment);
+        return back()->with('status', 'Settings saved to the database. New requests use these settings automatically. Restart long-running queue workers to load the changes.');
+    }
 
-            return back()->with('status', 'Runtime environment settings were saved. Apply the pending settings to rebuild Laravel runtime caches.');
-        }
+    public function updateMeta(Request $request, MetaAppSettings $settings): RedirectResponse
+    {
+        Gate::forUser($request->user())->authorize('platform.admin');
+        $data = $request->validate([
+            'app_id' => ['required', 'string', 'regex:/^[0-9]+$/', 'max:120'],
+            'app_secret' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $settings->save($data['app_id'], $data['app_secret'] ?? null);
 
-        return back()->with('status', 'Runtime environment settings are already up to date.');
+        return redirect()->route('dashboard.settings.index')->with('status', 'Meta app settings saved to the database. Changes take effect immediately.');
     }
 
     public function regenerateMetaToken(Request $request, MetaWebhookToken $tokens): RedirectResponse
@@ -234,57 +219,31 @@ class SettingsController extends Controller
         return redirect()->route('dashboard.settings.index')->with('status', 'The previous Meta webhook verify token has been revoked. Copy the new token into your Meta app.');
     }
 
-    public function showApply(Request $request, EnvironmentFile $environment): RedirectResponse|View
+    public function showApply(Request $request): RedirectResponse
     {
-        $workspace = $this->workspace($request);
         Gate::forUser($request->user())->authorize('platform.admin');
 
-        if (! $this->hasRuntimeApplyPending($environment)) {
-            return redirect()->route('dashboard.settings.index')->with('status', 'There are no pending runtime settings to apply.');
-        }
-
-        return view('dashboard.settings.apply', [
-            'workspace' => $workspace,
-            'commands' => [
-                'php artisan optimize:clear',
-                'php artisan config:cache',
-                'php artisan route:cache',
-                'php artisan view:cache',
-            ],
-        ]);
+        return redirect()->route('dashboard.settings.index')->with('status', 'Database settings apply automatically. No runtime cache rebuild is needed.');
     }
 
-    public function apply(Request $request, EnvironmentFile $environment): RedirectResponse
+    public function apply(Request $request): RedirectResponse
     {
-        Gate::forUser($request->user())->authorize('platform.admin');
-
-        if (! $this->hasRuntimeApplyPending($environment)) {
-            return redirect()->route('dashboard.settings.index')->with('status', 'There are no pending runtime settings to apply.');
-        }
-
-        try {
-            $this->runArtisan('optimize:clear');
-            $this->runArtisan('config:cache');
-            $this->runArtisan('route:cache');
-            $this->runArtisan('view:cache');
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return back()->with('error', 'Unable to apply runtime settings: '.$exception->getMessage());
-        }
-
-        $this->clearRuntimeApplyPending($environment);
-
-        return back()->with('status', 'Runtime settings were applied. Restart queue workers and other long-running processes if they are already running.');
+        return $this->showApply($request);
     }
 
     private function settingsPayload(EnvironmentFile $environment): array
     {
         $example = $environment->exampleValues();
-        $current = array_replace($example, $environment->values());
+        $settings = app(SiteSettings::class);
+        $current = array_replace($settings->defaults(), $settings->values());
         $metaTokenError = null;
+        $metaAppId = '';
+        $metaAppSecretConfigured = false;
         try {
-            $current['META_WEBHOOK_VERIFY_TOKEN'] = app(MetaWebhookToken::class)->value();
+            $meta = app(MetaAppSettings::class)->current();
+            $metaAppId = $meta->app_id;
+            $metaAppSecretConfigured = filled($meta->app_secret);
+            $current['META_WEBHOOK_VERIFY_TOKEN'] = $meta->verify_token;
         } catch (\RuntimeException $exception) {
             report($exception);
             $current['META_WEBHOOK_VERIFY_TOKEN'] = '';
@@ -293,18 +252,22 @@ class SettingsController extends Controller
         $metadata = $environment->exampleMetadata();
         $primaryKeys = collect(self::GROUPS)->flatMap(fn (array $group) => $this->groupKeys($group))->unique()->all();
         $advancedKeys = collect(array_keys($current))
-            ->merge($environment->writableKeys())
+            ->merge($settings->keys())
             ->unique()
             ->diff($primaryKeys)
+            ->diff(['META_APP_ID', 'META_APP_SECRET', 'META_WEBHOOK_VERIFY_TOKEN'])
             ->sort()
             ->values()
             ->all();
 
         return [
             'metaTokenError' => $metaTokenError,
-            'envPath' => $environment->path(),
+            'metaAppId' => $metaAppId,
+            'metaAppSecretConfigured' => $metaAppSecretConfigured,
+            'metaVerifyToken' => $current['META_WEBHOOK_VERIFY_TOKEN'],
+
             'environmentOverview' => [
-                'Environment file' => $environment->path(),
+                'Settings storage' => 'Database',
                 'Application URL' => config('app.url'),
                 'Timezone' => config('app.timezone'),
                 'Worker URL' => config('larawa.worker_url'),
@@ -315,13 +278,12 @@ class SettingsController extends Controller
                 'Storage' => config('filesystems.default'),
                 'API Rate Limit' => config('larawa.api_rate_limit_per_minute').'/minute',
             ],
-            'runtimeApplyPending' => $this->hasRuntimeApplyPending($environment),
             'settingGroups' => collect(self::GROUPS)->map(function (array $group) use ($current, $example, $metadata) {
                 return [
                     ...$group,
                     'sections' => collect($group['sections'])->map(fn (array $section) => [
                         ...$section,
-                        'fields' => $this->fields($section['keys'], $current, $example, $metadata),
+                        'fields' => $this->fields(array_values(array_intersect($section['keys'], array_keys(SiteSettings::MAP))), $current, $example, $metadata),
                     ])->all(),
                 ];
             })->all(),
@@ -364,7 +326,7 @@ class SettingsController extends Controller
         validator($values, [
             'APP_ENV' => ['nullable', Rule::in(self::OPTION_KEYS['APP_ENV'])],
             'APP_URL' => ['nullable', 'url', 'max:255'],
-            'APP_TIMEZONE' => ['nullable', 'timezone'],
+            'APP_TIMEZONE' => ['sometimes', 'required', 'timezone'],
             'DB_CONNECTION' => ['nullable', Rule::in(self::OPTION_KEYS['DB_CONNECTION'])],
             'DB_PORT' => ['nullable', 'integer', 'between:1,65535'],
             'DB_SSLMODE' => ['nullable', Rule::in(self::OPTION_KEYS['DB_SSLMODE'])],
@@ -389,60 +351,5 @@ class SettingsController extends Controller
             'WEBHOOK_RETRY_ATTEMPTS' => ['nullable', 'integer', 'min:0', 'max:100'],
             'WEBHOOK_RETRY_BACKOFF' => ['nullable', 'regex:/^\d+(,\d+)*$/'],
         ], [], collect(array_keys($values))->mapWithKeys(fn (string $key) => [$key => $key])->all())->validate();
-    }
-
-    private function runArtisan(string $command): void
-    {
-        $exitCode = Artisan::call($command, ['--no-interaction' => true]);
-
-        if ($exitCode !== 0) {
-            throw new \RuntimeException("`php artisan {$command}` failed with exit code {$exitCode}.");
-        }
-    }
-
-    private function environmentWillChange(EnvironmentFile $environment, array $values): bool
-    {
-        $current = $environment->values();
-
-        foreach ($values as $key => $value) {
-            $currentValue = $current[$key] ?? null;
-
-            if ($this->normalizeComparableValue($currentValue) !== $this->normalizeComparableValue($value)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function normalizeComparableValue(mixed $value): string
-    {
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-
-        return (string) $value;
-    }
-
-    private function hasRuntimeApplyPending(EnvironmentFile $environment): bool
-    {
-        return is_file($this->runtimeApplyPendingPath($environment));
-    }
-
-    private function markRuntimeApplyPending(EnvironmentFile $environment): void
-    {
-        $path = $this->runtimeApplyPendingPath($environment);
-        File::ensureDirectoryExists(dirname($path));
-        File::put($path, now()->toISOString());
-    }
-
-    private function clearRuntimeApplyPending(EnvironmentFile $environment): void
-    {
-        File::delete($this->runtimeApplyPendingPath($environment));
-    }
-
-    private function runtimeApplyPendingPath(EnvironmentFile $environment): string
-    {
-        return storage_path('framework/larawa-settings-pending/'.sha1($environment->path()).'.pending');
     }
 }

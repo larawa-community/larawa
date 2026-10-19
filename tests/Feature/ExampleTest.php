@@ -16,6 +16,7 @@ use App\Services\AuditLogger;
 use App\Services\ConfigurationDiagnostics;
 use App\Services\EnvironmentFile;
 use App\Services\InitialSetup;
+use App\Services\SiteSettings;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
@@ -948,9 +949,8 @@ class ExampleTest extends TestCase
             ->assertOk()
             ->assertSee('System Settings')
             ->assertSee('Production Diagnostics')
-            ->assertSee('Environment Overview')
+            ->assertSee('Runtime Overview')
             ->assertSee('Application Settings')
-            ->assertSee('Databases')
             ->assertSee('Redis')
             ->assertSee('Storage')
             ->assertSee('Advanced Settings')
@@ -962,27 +962,14 @@ class ExampleTest extends TestCase
             ->assertSee('critical');
     }
 
-    public function test_settings_apply_page_displays_runtime_cache_commands(): void
+    public function test_settings_apply_page_redirects_without_rebuilding_caches(): void
     {
-        $envPath = storage_path('framework/testing/dashboard-settings-apply.env');
-        config(['larawa.env_path' => $envPath]);
-        @mkdir(dirname($envPath), 0775, true);
-        file_put_contents($envPath, "APP_NAME=LaraWA\n");
-        @mkdir(dirname($this->runtimeApplyPendingPath($envPath)), 0775, true);
-        file_put_contents($this->runtimeApplyPendingPath($envPath), now()->toISOString());
-
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         $user = User::factory()->create();
         $workspace->users()->attach($user, ['role' => 'site_admin']);
-
-        $this->actingAs($user)
-            ->get(route('dashboard.settings.apply.show'))
-            ->assertOk()
-            ->assertSee('Apply Runtime Settings')
-            ->assertSee('php artisan optimize:clear')
-            ->assertSee('php artisan config:cache')
-            ->assertSee('php artisan route:cache')
-            ->assertSee('php artisan view:cache');
+        Artisan::shouldReceive('call')->never();
+        $this->actingAs($user)->get(route('dashboard.settings.apply.show'))
+            ->assertRedirect(route('dashboard.settings.index'));
     }
 
     public function test_site_admin_can_update_runtime_environment_settings(): void
@@ -1019,22 +1006,18 @@ class ExampleTest extends TestCase
         $user = User::factory()->create();
         $workspace->users()->attach($user, ['role' => 'site_admin']);
 
+        $original = file_get_contents($envPath);
         Artisan::shouldReceive('call')->never();
 
         $this->actingAs($user)
             ->patch(route('dashboard.settings.update'), [
                 'env' => [
                     'APP_NAME' => 'LaraWA',
-                    'APP_ENV' => 'production',
                     'APP_DEBUG' => 'false',
                     'APP_URL' => 'https://new.example.test',
                     'APP_TIMEZONE' => 'Asia/Tokyo',
                     'APP_FORCE_HTTPS' => 'true',
-                    'TRUSTED_PROXIES' => '*',
                     'LARAWA_DEFAULT_WORKSPACE' => 'Acme',
-                    'LARAWA_INSTALLED' => 'true',
-                    'DB_CONNECTION' => 'sqlite',
-                    'DB_DATABASE' => ':memory:',
                     'CACHE_STORE' => 'redis',
                     'QUEUE_CONNECTION' => 'redis',
                     'SESSION_DRIVER' => 'redis',
@@ -1057,16 +1040,13 @@ class ExampleTest extends TestCase
             ])
             ->assertRedirect();
 
-        $contents = file_get_contents($envPath);
-        $this->assertStringContainsString('APP_URL=https://new.example.test', $contents);
-        $this->assertStringContainsString('APP_TIMEZONE=Asia/Tokyo', $contents);
-        $this->assertStringContainsString('APP_FORCE_HTTPS=true', $contents);
-        $this->assertStringContainsString('CACHE_STORE=redis', $contents);
-        $this->assertStringContainsString('QUEUE_CONNECTION=redis', $contents);
-        $this->assertStringContainsString('SESSION_DRIVER=redis', $contents);
-        $this->assertStringContainsString('WEBHOOK_RETRY_BACKOFF="30,90,180"', $contents);
-        $this->assertStringContainsString('MAIL_MAILER=smtp', $contents);
-        $this->assertFileExists($this->runtimeApplyPendingPath($envPath));
+        $this->assertSame($original, file_get_contents($envPath));
+        $settings = app(SiteSettings::class)->values();
+        $this->assertSame('https://new.example.test', $settings['APP_URL']);
+        $this->assertSame('Asia/Tokyo', $settings['APP_TIMEZONE']);
+        $this->assertSame('redis', $settings['CACHE_STORE']);
+        $this->assertSame('smtp', $settings['MAIL_MAILER']);
+        $this->assertSame('30,90,180', $settings['WEBHOOK_RETRY_BACKOFF']);
     }
 
     public function test_settings_validation_uses_literal_environment_key_names(): void
@@ -1087,54 +1067,22 @@ class ExampleTest extends TestCase
         $this->actingAs($user)
             ->patch(route('dashboard.settings.update'), [
                 'env' => [
-                    'APP_ENV' => 'Production',
+                    'QUEUE_CONNECTION' => 'invalid',
                     'APP_URL' => 'https://example.test',
                 ],
             ])
             ->assertRedirect()
-            ->assertSessionHasErrors(['APP_ENV' => 'The selected APP_ENV is invalid.']);
+            ->assertSessionHasErrors(['QUEUE_CONNECTION' => 'The selected QUEUE_CONNECTION is invalid.']);
     }
 
-    public function test_site_admin_can_apply_runtime_environment_settings(): void
+    public function test_legacy_apply_action_does_not_write_files_or_run_commands(): void
     {
-        $envPath = storage_path('framework/testing/dashboard-settings-apply.env');
-        config(['larawa.env_path' => $envPath]);
-        @mkdir(dirname($envPath), 0775, true);
-        file_put_contents($envPath, "APP_NAME=LaraWA\n");
-        @mkdir(dirname($this->runtimeApplyPendingPath($envPath)), 0775, true);
-        file_put_contents($this->runtimeApplyPendingPath($envPath), now()->toISOString());
-
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         $user = User::factory()->create();
         $workspace->users()->attach($user, ['role' => 'site_admin']);
-
-        Artisan::shouldReceive('call')
-            ->once()
-            ->ordered()
-            ->with('optimize:clear', ['--no-interaction' => true])
-            ->andReturn(0);
-        Artisan::shouldReceive('call')
-            ->once()
-            ->ordered()
-            ->with('config:cache', ['--no-interaction' => true])
-            ->andReturn(0);
-        Artisan::shouldReceive('call')
-            ->once()
-            ->ordered()
-            ->with('route:cache', ['--no-interaction' => true])
-            ->andReturn(0);
-        Artisan::shouldReceive('call')
-            ->once()
-            ->ordered()
-            ->with('view:cache', ['--no-interaction' => true])
-            ->andReturn(0);
-
-        $this->actingAs($user)
-            ->post(route('dashboard.settings.apply'))
-            ->assertRedirect()
-            ->assertSessionHas('status', 'Runtime settings were applied. Restart queue workers and other long-running processes if they are already running.');
-
-        $this->assertFileDoesNotExist($this->runtimeApplyPendingPath($envPath));
+        Artisan::shouldReceive('call')->never();
+        $this->actingAs($user)->post(route('dashboard.settings.apply'))
+            ->assertRedirect(route('dashboard.settings.index'));
     }
 
     private function runtimeApplyPendingPath(string $envPath): string
