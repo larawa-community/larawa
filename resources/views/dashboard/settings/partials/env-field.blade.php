@@ -1,7 +1,13 @@
 <div>
     <label class="text-sm font-medium text-slate-700" for="env_{{ $field['key'] }}">{{ $field['key'] }}</label>
 
-    @if ($field['type'] === 'boolean')
+    @if ($field['key'] === 'META_WEBHOOK_VERIFY_TOKEN')
+        <div class="mt-2 flex gap-2">
+            <input id="env_META_WEBHOOK_VERIFY_TOKEN" type="text" readonly value="{{ $field['value'] }}" onclick="this.select()" class="min-w-0 flex-1 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-sm">
+            <button type="button" data-copy-meta-token class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Copy token</button>
+        </div>
+        <p data-meta-token-copy-status role="status" class="mt-1 text-xs text-slate-500">Generated and saved by LaraWA. Apply pending runtime settings before pasting this token into your Meta app.</p>
+    @elseif ($field['type'] === 'boolean')
         <input type="hidden" name="env[{{ $field['key'] }}]" value="false">
         <label class="mt-2 flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm">
             <input

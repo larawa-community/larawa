@@ -1837,3 +1837,18 @@ if (setupWizard) {
     updateStorageFields();
     showStep(0);
 }
+
+
+document.querySelector('[data-copy-meta-token]')?.addEventListener('click', async () => {
+    const input = document.getElementById('env_META_WEBHOOK_VERIFY_TOKEN');
+    const status = document.querySelector('[data-meta-token-copy-status]');
+    if (!input || !status) return;
+    try {
+        await navigator.clipboard.writeText(input.value);
+        status.textContent = 'Token copied. Paste it into the Verify token field in your Meta app.';
+    } catch {
+        input.focus();
+        input.select();
+        status.textContent = 'Token selected. Press Ctrl+C or Command+C to copy it.';
+    }
+});

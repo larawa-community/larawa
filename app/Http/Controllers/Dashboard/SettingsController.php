@@ -183,6 +183,10 @@ class SettingsController extends Controller
         $workspace = $this->workspace($request);
         Gate::forUser($request->user())->authorize('platform.admin');
 
+        if ($environment->ensureMetaWebhookVerifyToken()) {
+            $this->markRuntimeApplyPending($environment);
+        }
+
         return view('dashboard.settings.index', [
             'workspace' => $workspace,
             'diagnostics' => $diagnostics->summary(),
@@ -194,6 +198,10 @@ class SettingsController extends Controller
     {
         Gate::forUser($request->user())->authorize('platform.admin');
 
+        if ($environment->ensureMetaWebhookVerifyToken()) {
+            $this->markRuntimeApplyPending($environment);
+        }
+
         $data = $request->validate([
             'env' => ['required', 'array'],
             'env.*' => ['nullable', 'string', 'max:1000'],
@@ -203,7 +211,7 @@ class SettingsController extends Controller
         $values = [];
 
         foreach (($data['env'] ?? []) as $key => $value) {
-            if (! isset($allowed[$key])) {
+            if (! isset($allowed[$key]) || $key === 'META_WEBHOOK_VERIFY_TOKEN') {
                 continue;
             }
 

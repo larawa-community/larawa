@@ -222,7 +222,7 @@ Configure the shared Meta app once under **System Settings → Application Setti
 
 - `META_APP_ID`: the site's Facebook/Meta App ID, also used for template sample uploads.
 - `META_APP_SECRET`: the same app's secret, used to verify webhook signatures.
-- `META_WEBHOOK_VERIFY_TOKEN`: a strong token of at least 16 characters that you also enter in Meta.
+- `META_WEBHOOK_VERIFY_TOKEN`: generated and saved automatically when a platform administrator opens System Settings. Use **Copy token** to paste it into Meta. It is read-only and stays unchanged when settings are saved or the page is refreshed. Existing configured tokens are preserved.
 
 Save Settings, apply the pending runtime settings, and restart long-running queue workers. Copy the callback URL displayed there into Meta:
 

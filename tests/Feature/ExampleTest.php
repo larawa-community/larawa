@@ -926,6 +926,13 @@ class ExampleTest extends TestCase
 
     public function test_settings_page_displays_production_diagnostics(): void
     {
+        $envPath = tempnam(sys_get_temp_dir(), 'larawa-settings-diagnostics-');
+        file_put_contents($envPath, "META_WEBHOOK_VERIFY_TOKEN=existing-facebook-token\n");
+        config(['larawa.env_path' => $envPath]);
+        $this->beforeApplicationDestroyed(function () use ($envPath): void {
+            @unlink($envPath);
+            @unlink($envPath.'.meta-token.lock');
+        });
         config([
             'app.env' => 'production',
             'app.key' => 'base64:'.base64_encode(str_repeat('b', 32)),

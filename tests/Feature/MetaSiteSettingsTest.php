@@ -18,7 +18,7 @@ class MetaSiteSettingsTest extends TestCase
     public function test_only_platform_admins_can_view_and_save_shared_meta_settings(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'larawa-meta-settings-');
-        config(['larawa.env_path' => $path]);
+        config(['larawa.env_path' => $path, 'larawa.meta.verify_token' => null]);
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         $admin = User::factory()->create();
         $workspace->users()->attach($admin, ['role' => 'site_admin']);
@@ -32,12 +32,36 @@ class MetaSiteSettingsTest extends TestCase
             $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()
                 ->assertSee(url('/api/meta/whatsapp/webhook'))
                 ->assertSee('META_APP_ID')->assertSee('META_APP_SECRET')->assertSee('META_WEBHOOK_VERIFY_TOKEN');
+            $token = app(EnvironmentFile::class)->values()['META_WEBHOOK_VERIFY_TOKEN'];
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $token);
+            $this->actingAs($admin)->get(route('dashboard.settings.index'))->assertOk()
+                ->assertSee($token)->assertSee('readonly', false)->assertSee('Copy token')
+                ->assertDontSee('name="env[META_WEBHOOK_VERIFY_TOKEN]"', false);
+            $this->assertSame($token, app(EnvironmentFile::class)->values()['META_WEBHOOK_VERIFY_TOKEN']);
             $this->actingAs($admin)->patch(route('dashboard.settings.update'), ['env' => $settings])
                 ->assertRedirect()->assertSessionHasNoErrors();
-            $this->assertSame($settings, app(EnvironmentFile::class)->values());
+            $this->assertEquals(array_replace($settings, ['META_WEBHOOK_VERIFY_TOKEN' => $token]), app(EnvironmentFile::class)->values());
+            config(['larawa.meta.verify_token' => $token]);
+            $this->get('/api/meta/whatsapp/webhook?hub.mode=subscribe&hub.verify_token='.$token.'&hub.challenge=ok')->assertOk()->assertContent('ok');
         } finally {
             @unlink($path);
+            @unlink($path.'.backup');
+            @unlink($path.'.meta-token.lock');
             @unlink(storage_path('framework/larawa-settings-pending/'.sha1($path).'.pending'));
+        }
+    }
+
+    public function test_existing_verify_token_is_not_rotated(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'larawa-meta-existing-');
+        file_put_contents($path, "META_WEBHOOK_VERIFY_TOKEN=existing-facebook-token\n");
+        config(['larawa.env_path' => $path]);
+        try {
+            $this->assertFalse(app(EnvironmentFile::class)->ensureMetaWebhookVerifyToken());
+            $this->assertSame('existing-facebook-token', app(EnvironmentFile::class)->values()['META_WEBHOOK_VERIFY_TOKEN']);
+        } finally {
+            @unlink($path);
+            @unlink($path.'.meta-token.lock');
         }
     }
 
