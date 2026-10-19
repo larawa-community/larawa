@@ -142,7 +142,8 @@ class WhatsappTemplateManagementTest extends TestCase
 
     public function test_media_header_upload_uses_app_id_and_returns_the_meta_handle_without_caching(): void
     {
-        [$workspace, $session] = $this->cloudSession(['app_id' => 'app-1']);
+        config(['larawa.meta.app_id' => 'app-1']);
+        [$workspace, $session] = $this->cloudSession(['app_id' => 'ignored-legacy-app']);
         [, $key] = app(ApiKeyService::class)->create($workspace, 'Templates', ['templates:write']);
         Http::fake([
             'https://graph.facebook.com/v25.0/app-1/uploads' => Http::response(['id' => 'upload:session-1']),

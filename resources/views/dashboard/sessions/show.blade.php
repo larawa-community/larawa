@@ -125,15 +125,7 @@
                         <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WhatsApp Business Account (WABA) ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID from WhatsApp API Setup" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="access_token" type="password" placeholder="Access token used for Graph API requests" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <input name="app_secret" type="password" placeholder="Meta App Secret used to verify webhooks" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <p class="text-xs text-slate-500">The access token sends messages. The App Secret is not part of a send request; LaraWA uses it to authenticate signed webhook deliveries. Find it under Meta App Dashboard → App settings → Basic.</p>
-                        <div class="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-                            <label class="block font-medium" for="meta-callback-url">Callback URL</label>
-                            <input id="meta-callback-url" type="text" readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook/'.$session->uuid) }}" class="mt-1 w-full rounded border border-slate-200 bg-white p-2 font-mono text-slate-900">
-                            <label class="mt-3 block font-medium" for="meta-verify-token">Verify token</label>
-                            <input id="meta-verify-token" type="text" readonly onclick="this.select()" value="{{ $session->cloudConfig?->verify_token }}" class="mt-1 w-full rounded border border-slate-200 bg-white p-2 font-mono text-slate-900">
-                            <div class="mt-2">Copy both values into Meta App Dashboard, then save these app settings to activate sending.</div>
-                        </div>
+                        <p class="text-xs text-slate-500">The Meta app and webhook are managed by a platform administrator in System Settings.</p>
                     @endif
                     <button class="rounded-md bg-[#128c42] px-3 py-2 text-sm font-semibold text-white">Save settings</button>
                 </form>

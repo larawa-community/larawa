@@ -39,11 +39,10 @@ components:
         last_seen_at: { type: [string, "null"], format: date-time }
     MetaWebhookSetup:
       type: object
-      description: Generated only for an Official Cloud API session. Copy these values into the Meta App webhook configuration.
-      required: [callback_url, verify_token]
+      description: Shared site webhook URL for Official Cloud API sessions. App credentials and the verify token are managed only in System Settings.
+      required: [callback_url]
       properties:
         callback_url: { type: string, format: uri }
-        verify_token: { type: string, minLength: 64, maxLength: 64 }
     WorkerSessionState:
       type: object
       nullable: true
@@ -332,7 +331,7 @@ paths:
                 fallback_session_uuid: { type: string, format: uuid, description: Same-workspace Official Cloud API fallback for a Wrapper session; both types must be enabled. }
       responses:
         "201":
-          description: Session created. Official sessions include their generated callback URL and verify token for Meta App setup.
+          description: Session created. Official sessions include the shared site callback URL; the verify token is not exposed.
           content:
             application/json:
               schema:
@@ -366,9 +365,7 @@ paths:
                 fallback_session_uuid: { type: [string, "null"], format: uuid }
                 waba_id: { type: string }
                 phone_number_id: { type: string }
-                app_id: { type: [string, "null"], description: Required only for resumable sample-media uploads used by media-header templates. }
                 access_token: { type: string }
-                app_secret: { type: string }
       responses:
         "200": { description: Session settings updated }
         "404": { description: Session not found or its type is disabled for the workspace. }

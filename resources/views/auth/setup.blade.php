@@ -80,6 +80,7 @@
                                     <span class="mt-1 block text-slate-500">Enable this only when Cloudflare terminates HTTPS and forwards plain HTTP to LaraWA. The installer will set APP_FORCE_HTTPS=true and TRUSTED_PROXIES=*.</span>
                                 </span>
                             </label>
+                            @unless(config('larawa.cloud_only'))
                             <div class="space-y-5 rounded-md border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
                                 <div>
                                     <h3 class="text-sm font-semibold text-slate-800">WA Worker</h3>
@@ -96,6 +97,7 @@
                                     </div>
                                 </label>
                             </div>
+                            @endunless
                             <div class="grid gap-5 sm:col-span-2 sm:grid-cols-3">
                                 <label class="block"><span class="mb-1 block text-sm font-medium text-slate-700">API rate limit / minute</span><input name="api_rate_limit_per_minute" type="number" min="1" max="100000" value="{{ old('api_rate_limit_per_minute', config('larawa.api_rate_limit_per_minute', 120)) }}" required class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/20"></label>
                                 <label class="block"><span class="mb-1 block text-sm font-medium text-slate-700">Webhook timeout seconds</span><input name="webhook_timeout" type="number" min="1" max="300" value="{{ old('webhook_timeout', config('larawa.webhook_timeout', 10)) }}" required class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/20"></label>

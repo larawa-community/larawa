@@ -103,6 +103,10 @@ class WhatsappSession extends Model
 
     public function scopeAllowedByWorkspace(Builder $query): Builder
     {
+        if (config('larawa.cloud_only')) {
+            $query->where('type', self::TYPE_CLOUD);
+        }
+
         return $query->where(function (Builder $query): void {
             $query->where(function (Builder $query): void {
                 $query->where('type', self::TYPE_WRAPPER)

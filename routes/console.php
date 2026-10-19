@@ -54,7 +54,9 @@ Artisan::command('larawa:doctor {--strict : Return a failing exit code when warn
 
 Artisan::command('larawa:sessions:sync {--limit= : Maximum number of sessions to sync}', function (WhatsappSessionSync $sync) {
     $limit = $this->option('limit') !== null ? max(1, (int) $this->option('limit')) : null;
-    $query = WhatsappSession::query()->orderBy('id');
+    $query = WhatsappSession::query()
+        ->when(config('larawa.cloud_only'), fn ($query) => $query->where('type', WhatsappSession::TYPE_CLOUD))
+        ->orderBy('id');
 
     if ($limit !== null) {
         $query->limit($limit);

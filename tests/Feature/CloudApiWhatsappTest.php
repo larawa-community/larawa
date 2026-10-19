@@ -21,6 +21,12 @@ class CloudApiWhatsappTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['larawa.meta.app_secret' => 'app-secret', 'larawa.meta.verify_token' => 'verify-token-1234']);
+    }
+
     public function test_api_creates_an_official_session_then_validates_its_app_settings(): void
     {
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
@@ -43,20 +49,15 @@ class CloudApiWhatsappTest extends TestCase
             ->assertJsonPath('data.type', WhatsappSession::TYPE_CLOUD)
             ->assertJsonPath('data.status', 'created')
             ->assertJsonPath('provider.configured', false)
-            ->assertJsonPath('webhook.callback_url', url('/api/meta/whatsapp/webhook/'.$response->json('data.uuid')))
-            ->assertJson(fn ($json) => $json->whereType('webhook.verify_token', 'string')->etc())
+            ->assertJsonPath('webhook.callback_url', url('/api/meta/whatsapp/webhook'))
+            ->assertJsonMissingPath('webhook.verify_token')
             ->assertJsonMissing(['access_token' => 'api-cloud-token'])
             ->assertJsonMissing(['app_secret' => 'api-app-secret']);
-
-        $this->assertSame(64, strlen($response->json('webhook.verify_token')));
-        $raw = DB::table('whatsapp_cloud_configs')->where('whatsapp_session_id', $response->json('data.id'))->first();
-        $this->assertNotSame($response->json('webhook.verify_token'), $raw->verify_token);
 
         $update = $this->withToken($apiKey)->patchJson('/api/v1/sessions/'.$response->json('data.uuid'), [
             'waba_id' => 'waba-api',
             'phone_number_id' => 'phone-api',
             'access_token' => 'api-cloud-token',
-            'app_secret' => 'api-app-secret',
         ]);
 
         $update->assertOk()
@@ -307,7 +308,7 @@ class CloudApiWhatsappTest extends TestCase
         $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
         $cloud = $this->cloudSession($workspace);
 
-        $this->get('/api/meta/whatsapp/webhook/'.$cloud->uuid.'?hub.mode=subscribe&hub.verify_token=verify-token-1234&hub.challenge=12345')
+        $this->get('/api/meta/whatsapp/webhook'.'?hub.mode=subscribe&hub.verify_token=verify-token-1234&hub.challenge=12345')
             ->assertOk()
             ->assertSeeText('12345');
 
@@ -336,7 +337,7 @@ class CloudApiWhatsappTest extends TestCase
         $signature = 'sha256='.hash_hmac('sha256', $raw, 'app-secret');
 
         for ($i = 0; $i < 2; $i++) {
-            $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+            $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_HUB_SIGNATURE_256' => $signature,
             ], $raw)->assertOk();
@@ -352,6 +353,63 @@ class CloudApiWhatsappTest extends TestCase
             'body' => 'Hello from Meta',
         ]);
         $this->assertSame('processed', MetaWebhookReceipt::firstOrFail()->status);
+    }
+
+    public function test_shared_callback_routes_a_second_number_without_the_callback_number_in_the_payload(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $callback = $this->cloudSession($workspace);
+        $second = $this->cloudSession($workspace, 'phone-2');
+        $second->cloudConfig->update(['waba_id' => 'waba-2']);
+        $payload = $this->webhookPayload('phone-2');
+        $payload['entry'][0]['id'] = 'waba-2';
+        $payload['entry'][0]['changes'][0]['value']['messages'] = [[
+            'from' => '15551234567', 'id' => 'wamid.second', 'type' => 'text',
+            'text' => ['body' => 'Second account'],
+        ]];
+        $raw = json_encode($payload);
+        for ($i = 0; $i < 2; $i++) {
+            $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
+            ], $raw)->assertOk();
+        }
+        $this->assertDatabaseCount('meta_webhook_receipts', 1);
+        $this->assertDatabaseCount('messages', 1);
+        $this->assertDatabaseHas('messages', [
+            'whatsapp_session_id' => $second->id, 'wa_message_id' => 'wamid.second',
+        ]);
+    }
+
+    public function test_site_callback_routes_across_workspaces_and_ignores_legacy_app_secrets_but_checks_waba(): void
+    {
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme']);
+        $otherWorkspace = Workspace::create(['name' => 'Other', 'slug' => 'other']);
+        $callback = $this->cloudSession($workspace);
+        $this->cloudSession($workspace, 'phone-2');
+        $otherApp = $this->cloudSession($workspace, 'other-app');
+        $otherApp->cloudConfig->update(['app_secret' => 'different-secret']);
+        $this->cloudSession($otherWorkspace, 'other-workspace');
+        $wrongWaba = $this->cloudSession($workspace, 'wrong-waba');
+        $wrongWaba->cloudConfig->update(['waba_id' => 'waba-2']);
+        $payload = ['object' => 'whatsapp_business_account', 'entry' => []];
+        foreach (['phone-1', 'phone-2', 'other-app', 'other-workspace', 'wrong-waba', 'unknown'] as $phone) {
+            $entry = $this->webhookPayload($phone)['entry'][0];
+            $entry['id'] = 'waba-1';
+            $entry['changes'][0]['value']['messages'] = [[
+                'from' => '15551234567', 'id' => 'wamid.'.$phone, 'type' => 'text',
+                'text' => ['body' => $phone],
+            ]];
+            $payload['entry'][] = $entry;
+        }
+        $raw = json_encode($payload);
+        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
+        ], $raw)->assertOk();
+        $this->assertSame(['wamid.phone-1', 'wamid.phone-2', 'wamid.other-app', 'wamid.other-workspace'], Message::orderBy('id')->pluck('wa_message_id')->all());
+        $this->assertCount(4, MetaWebhookReceipt::firstOrFail()->payload['entry']);
+        $this->assertDatabaseHas('messages', ['workspace_id' => $otherWorkspace->id, 'wa_message_id' => 'wamid.other-workspace']);
     }
 
     public function test_meta_webhook_downloads_and_serves_incoming_images_documents_videos_and_voice_messages(): void
@@ -429,7 +487,7 @@ class CloudApiWhatsappTest extends TestCase
         ];
         $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
 
-        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
         ], $raw)->assertOk();
@@ -489,12 +547,12 @@ class CloudApiWhatsappTest extends TestCase
         $knownRaw = json_encode($this->webhookPayload('phone-1'));
         $unknownRaw = json_encode($this->webhookPayload('not-configured'));
 
-        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256=bad',
         ], $knownRaw)->assertUnauthorized();
 
-        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $unknownRaw, 'app-secret'),
         ], $unknownRaw)->assertOk();
@@ -524,7 +582,7 @@ class CloudApiWhatsappTest extends TestCase
         ];
         $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
 
-        $this->call('POST', '/api/meta/whatsapp/webhook/'.$cloud->uuid, [], [], [], [
+        $this->call('POST', '/api/meta/whatsapp/webhook', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $raw, 'app-secret'),
         ], $raw)->assertOk();
@@ -645,7 +703,7 @@ class CloudApiWhatsappTest extends TestCase
         $this->assertSame([], $sent->failureDetails());
     }
 
-    private function cloudSession(Workspace $workspace): WhatsappSession
+    private function cloudSession(Workspace $workspace, string $phoneNumberId = 'phone-1'): WhatsappSession
     {
         $session = WhatsappSession::create([
             'workspace_id' => $workspace->id,
@@ -655,7 +713,7 @@ class CloudApiWhatsappTest extends TestCase
         ]);
         $session->cloudConfig()->create([
             'waba_id' => 'waba-1',
-            'phone_number_id' => 'phone-1',
+            'phone_number_id' => $phoneNumberId,
             'access_token' => 'cloud-token',
             'app_secret' => 'app-secret',
             'verify_token' => 'verify-token-1234',

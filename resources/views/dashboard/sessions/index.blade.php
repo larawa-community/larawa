@@ -75,7 +75,7 @@
             </div>
             <div class="px-5 py-4">{{ $sessions->links() }}</div>
         </section>
-        @if ($canManageSessions)
+        @if ($canManageSessions && count($allowedSessionTypes) > 0)
             <section class="rounded-lg border border-slate-200 bg-white p-5">
                 <h2 class="font-semibold">Create Session</h2>
                 <form method="POST" action="{{ route('dashboard.sessions.store') }}" class="mt-5 space-y-4">
@@ -112,7 +112,7 @@
                         </label>
                     @endif
                     @if ($allowsCloud)
-                        <p class="rounded-md bg-slate-50 p-3 text-xs text-slate-500">For Official Cloud API, LaraWA creates the session first and generates its callback URL and verify token. Meta app credentials are added on the next screen.</p>
+                        <p class="rounded-md bg-slate-50 p-3 text-xs text-slate-500">For Official Cloud API, add the WABA ID, phone number ID, and access token after creating the session. All sessions use the shared Meta app and webhook from System Settings.</p>
                     @endif
                     <button class="rounded-md bg-[#25d366] px-4 py-2 font-semibold text-white hover:bg-[#1eb858]">Create</button>
                 </form>

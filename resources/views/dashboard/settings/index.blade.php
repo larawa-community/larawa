@@ -69,6 +69,11 @@
                             @foreach ($group['sections'] as $section)
                                 <div class="border-b border-slate-100 px-5 py-4 last:border-b-0">
                                     <h3 class="text-sm font-semibold text-slate-900">{{ $section['label'] }}</h3>
+                                    @if ($section['label'] === 'Official Meta Cloud API')
+                                        <p class="mt-2 text-sm text-slate-500">One Meta app serves all Official sessions across all workspaces. Set the App ID, App Secret, and a strong verify token below. Save and apply runtime settings, then use this callback URL and the same verify token in Meta. Subscribe to the messages field and subscribe the app to each WABA.</p>
+                                        <label class="mt-3 block text-sm font-medium" for="meta-site-callback">Meta App webhook callback URL</label>
+                                        <input id="meta-site-callback" readonly onclick="this.select()" value="{{ url('/api/meta/whatsapp/webhook') }}" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm">
+                                    @endif
                                     <div class="mt-4 grid gap-x-5 gap-y-4 md:grid-cols-2">
                                         @foreach ($section['fields'] as $field)
                                             @include('dashboard.settings.partials.env-field', ['field' => $field])

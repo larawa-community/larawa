@@ -7,18 +7,18 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Str;
 
 class WhatsappCloudConfig extends Model
 {
     protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'app_id', 'access_token', 'app_secret', 'verify_token'];
 
-    protected $hidden = ['access_token', 'app_secret', 'verify_token'];
+    protected $hidden = ['access_token', 'app_id', 'app_secret', 'verify_token'];
 
     protected static function booted(): void
     {
         static::creating(function (self $config): void {
-            $config->verify_token ??= Str::random(64);
+            // Retain the legacy non-null column without generating per-session credentials.
+            $config->verify_token ??= '';
         });
     }
 
@@ -31,8 +31,7 @@ class WhatsappCloudConfig extends Model
     {
         return filled($this->waba_id)
             && filled($this->phone_number_id)
-            && filled($this->access_token)
-            && filled($this->app_secret);
+            && filled($this->access_token);
     }
 
     protected function accessToken(): Attribute

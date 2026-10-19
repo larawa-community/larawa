@@ -10,6 +10,10 @@ class WorkerClient
 {
     private function http(): PendingRequest
     {
+        if (config('larawa.cloud_only')) {
+            throw new \RuntimeException('WhatsApp Wrapper is disabled in Cloud API-only mode.');
+        }
+
         return Http::timeout(30)
             ->acceptJson()
             ->asJson()

@@ -17,6 +17,28 @@ class WorkspaceSessionEntitlementTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_cloud_only_deployment_blocks_wrapper_even_when_workspace_allows_it(): void
+    {
+        config(['larawa.cloud_only' => true]);
+        Http::preventStrayRequests();
+        $workspace = Workspace::create(['name' => 'Cloud deployment', 'slug' => 'cloud-deployment']);
+        $wrapper = $this->makeSession($workspace, WhatsappSession::TYPE_WRAPPER, 'Existing Wrapper');
+        [, $apiKey] = app(ApiKeyService::class)->create($workspace, 'Sessions', ['sessions:read', 'sessions:write']);
+
+        $this->assertSame([WhatsappSession::TYPE_CLOUD], $workspace->allowedSessionTypes());
+        $this->assertFalse($workspace->allowsSessionType(WhatsappSession::TYPE_WRAPPER));
+        $this->assertFalse(WhatsappSession::query()->allowedByWorkspace()->whereKey($wrapper->id)->exists());
+        $this->withToken($apiKey)->postJson('/api/v1/sessions', [
+            'name' => 'Forbidden', 'type' => WhatsappSession::TYPE_WRAPPER,
+        ])->assertUnprocessable();
+        $this->withToken($apiKey)->postJson('/api/v1/sessions', ['name' => 'Cloud'])
+            ->assertCreated()->assertJsonPath('data.type', WhatsappSession::TYPE_CLOUD);
+        $this->withToken($apiKey)->getJson('/api/v1/sessions')->assertJsonMissing(['uuid' => $wrapper->uuid]);
+        $this->withToken(config('larawa.worker_token'))->postJson('/api/internal/worker/events', [])->assertNotFound();
+        $this->artisan('larawa:sessions:sync')->assertSuccessful();
+        Http::assertNothingSent();
+    }
+
     public function test_workspace_defaults_and_existing_data_patch_allow_both_session_types(): void
     {
         $workspace = Workspace::create(['name' => 'Existing', 'slug' => 'existing']);

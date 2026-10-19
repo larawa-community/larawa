@@ -6085,6 +6085,36 @@ class ExampleTest extends TestCase
         return $user;
     }
 
+    public function test_cloud_only_setup_does_not_require_worker_settings(): void
+    {
+        $envPath = storage_path('framework/testing/cloud-only-installer.env');
+        @mkdir(dirname($envPath), 0775, true);
+        @unlink($envPath);
+        config(['larawa.env_path' => $envPath, 'larawa.installed' => false, 'larawa.cloud_only' => true]);
+
+        $this->get(route('setup'))->assertOk()->assertDontSee('name="worker_token"', false);
+        $payload = $this->installerPayload([
+            'workspace_name' => 'Cloud Only',
+            'name' => 'Admin',
+            'email' => 'cloud-only@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ]);
+        unset($payload['worker_url'], $payload['worker_token'], $payload['worker_callback_url']);
+
+        try {
+            $this->post(route('setup.store'), $payload)->assertSessionHasNoErrors()->assertRedirect(route('dashboard'));
+            $this->assertStringContainsString('LARAWA_CLOUD_ONLY=true', file_get_contents($envPath));
+            $checks = app(ConfigurationDiagnostics::class)->checks();
+            $this->assertNotContains('worker_token', array_column($checks, 'key'));
+        } finally {
+            @unlink($envPath);
+            putenv('LARAWA_CLOUD_ONLY=false');
+            $_ENV['LARAWA_CLOUD_ONLY'] = 'false';
+            $_SERVER['LARAWA_CLOUD_ONLY'] = 'false';
+        }
+    }
+
     private function installerPayload(array $overrides = []): array
     {
         return array_merge([

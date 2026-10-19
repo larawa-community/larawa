@@ -302,6 +302,7 @@ class CloudConversationServiceWindowTest extends TestCase
 
     private function postSignedWebhook(WhatsappSession $session, array $payload): void
     {
+        config(['larawa.meta.app_secret' => 'app-secret']);
         $raw = json_encode($payload, JSON_UNESCAPED_SLASHES);
         $this->call('POST', '/api/meta/whatsapp/webhook/'.$session->uuid, [], [], [], [
             'CONTENT_TYPE' => 'application/json',

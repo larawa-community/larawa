@@ -45,7 +45,7 @@ class ConfigurationDiagnostics
             $this->logLevel(),
             $this->appUrl(),
             $this->initialSetup(),
-            $this->workerToken(),
+            ...(config('larawa.cloud_only') ? [] : [$this->workerToken()]),
             $this->database(),
             $this->queue(),
             $this->cache(),

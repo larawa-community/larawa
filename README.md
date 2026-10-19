@@ -53,7 +53,7 @@ After setup:
 1. Login to the dashboard.
 2. Open `Sessions`.
 3. Create a new WhatsApp session and choose Official Cloud API or WhatsApp Wrapper.
-4. For Wrapper, scan the QR code using WhatsApp > Linked devices. For Official, copy the generated callback URL and verify token into the Meta app, then configure its credentials.
+4. For Wrapper, scan the QR code using WhatsApp > Linked devices. For Official, configure the shared Meta app and webhook in System Settings, then enter each session’s WABA ID, phone number ID, and access token.
 5. Wait until the session status becomes `ready`.
 6. Create an API key from the dashboard.
 7. Start calling the API.

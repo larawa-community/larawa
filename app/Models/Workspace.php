@@ -36,7 +36,7 @@ class Workspace extends Model
     {
         return match ($type) {
             WhatsappSession::TYPE_CLOUD => (bool) $this->allows_official_cloud_api,
-            WhatsappSession::TYPE_WRAPPER => (bool) $this->allows_whatsapp_wrapper,
+            WhatsappSession::TYPE_WRAPPER => ! config('larawa.cloud_only') && (bool) $this->allows_whatsapp_wrapper,
             default => false,
         };
     }
@@ -44,7 +44,7 @@ class Workspace extends Model
     public function allowedSessionTypes(): array
     {
         return array_values(array_filter([
-            $this->allows_whatsapp_wrapper ? WhatsappSession::TYPE_WRAPPER : null,
+            $this->allowsSessionType(WhatsappSession::TYPE_WRAPPER) ? WhatsappSession::TYPE_WRAPPER : null,
             $this->allows_official_cloud_api ? WhatsappSession::TYPE_CLOUD : null,
         ]));
     }

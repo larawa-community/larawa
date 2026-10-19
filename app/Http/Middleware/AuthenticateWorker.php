@@ -10,6 +10,8 @@ class AuthenticateWorker
 {
     public function handle(Request $request, Closure $next): Response
     {
+        abort_if(config('larawa.cloud_only'), 404);
+
         $token = $request->bearerToken() ?: $request->header('X-Worker-Token');
         $expected = (string) config('larawa.worker_token');
 

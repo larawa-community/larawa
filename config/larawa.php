@@ -17,6 +17,7 @@ $workerEvents = [
 ];
 
 return [
+    'cloud_only' => filter_var(env('LARAWA_CLOUD_ONLY', false), FILTER_VALIDATE_BOOL),
     'version' => env('LARAWA_VERSION', '13.0.0'),
     'installed' => filter_var(env('LARAWA_INSTALLED', false), FILTER_VALIDATE_BOOL),
     'env_path' => env('LARAWA_ENV_PATH', base_path('.env')),
@@ -25,6 +26,9 @@ return [
     'worker_token' => env('WA_WORKER_INTERNAL_TOKEN', 'change-me-worker-token'),
     'worker_callback_url' => env('WA_WORKER_CALLBACK_URL', env('APP_URL').'/internal/worker/events'),
     'meta' => [
+        'app_id' => env('META_APP_ID'),
+        'app_secret' => env('META_APP_SECRET'),
+        'verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'graph_url' => rtrim(env('META_GRAPH_API_URL', 'https://graph.facebook.com'), '/'),
         'graph_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'timeout' => (int) env('META_WHATSAPP_TIMEOUT', 30),

@@ -54,6 +54,9 @@ class SettingsController extends Controller
                 [
                     'label' => 'Official Meta Cloud API',
                     'keys' => [
+                        'META_APP_ID',
+                        'META_APP_SECRET',
+                        'META_WEBHOOK_VERIFY_TOKEN',
                         'META_GRAPH_API_URL',
                         'META_GRAPH_API_VERSION',
                         'META_WHATSAPP_TIMEOUT',
@@ -142,6 +145,8 @@ class SettingsController extends Controller
     ];
 
     private const SECRET_KEYS = [
+        'META_APP_SECRET',
+        'META_WEBHOOK_VERIFY_TOKEN',
         'APP_KEY',
         'DB_PASSWORD',
         'POSTGRES_PASSWORD',
@@ -354,6 +359,9 @@ class SettingsController extends Controller
             'AWS_ENDPOINT' => ['nullable', 'url', 'max:500'],
             'WA_WORKER_URL' => ['nullable', 'url', 'max:500'],
             'WA_WORKER_CALLBACK_URL' => ['nullable', 'url', 'max:500'],
+            'META_APP_ID' => ['nullable', 'regex:/^[0-9]+$/', 'max:120'],
+            'META_APP_SECRET' => ['nullable', 'string', 'max:1000'],
+            'META_WEBHOOK_VERIFY_TOKEN' => ['nullable', 'string', 'min:16', 'max:1000'],
             'META_GRAPH_API_URL' => ['nullable', 'url', 'max:500'],
             'META_GRAPH_API_VERSION' => ['nullable', 'regex:/^v\d+\.0$/'],
             'META_WHATSAPP_TIMEOUT' => ['nullable', 'integer', 'min:1', 'max:300'],

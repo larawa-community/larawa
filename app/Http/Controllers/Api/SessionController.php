@@ -64,11 +64,9 @@ class SessionController extends Controller
 
         $webhook = null;
         if ($session->isCloudApi()) {
-            $cloudConfig = $session->cloudConfig;
             $providerState = ['provider' => WhatsappSession::TYPE_CLOUD, 'status' => 'created', 'configured' => false];
             $webhook = [
-                'callback_url' => url('/api/meta/whatsapp/webhook/'.$session->uuid),
-                'verify_token' => $cloudConfig->verify_token,
+                'callback_url' => url('/api/meta/whatsapp/webhook'),
             ];
         } else {
             try {
@@ -96,9 +94,10 @@ class SessionController extends Controller
             'fallback_session_uuid' => ['nullable', 'uuid'],
             'waba_id' => ['sometimes', 'string', 'max:120'],
             'phone_number_id' => ['sometimes', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
-            'app_id' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'app_id' => ['prohibited'],
             'access_token' => ['sometimes', 'string'],
-            'app_secret' => ['sometimes', 'string'],
+            'app_secret' => ['prohibited'],
+            'verify_token' => ['prohibited'],
         ]);
 
         if (array_key_exists('fallback_session_uuid', $data)) {
@@ -113,13 +112,12 @@ class SessionController extends Controller
             $credentials = array_filter($this->cloudCredentialData($data), fn ($value) => $value !== null);
             if ($credentials !== []) {
                 $cloudConfig = $session->cloudConfig;
-                $activationCredentials = array_intersect_key($credentials, array_flip(['waba_id', 'phone_number_id', 'access_token', 'app_secret']));
+                $activationCredentials = array_intersect_key($credentials, array_flip(['waba_id', 'phone_number_id', 'access_token']));
                 if ($activationCredentials !== []) {
                     $prospective = array_merge([
                         'waba_id' => $cloudConfig?->waba_id,
                         'phone_number_id' => $cloudConfig?->phone_number_id,
                         'access_token' => $cloudConfig?->access_token,
-                        'app_secret' => $cloudConfig?->app_secret,
                     ], $activationCredentials);
                     $missing = collect($prospective)->filter(fn ($value) => ! filled($value))->keys();
                     if ($missing->isNotEmpty()) {
@@ -278,9 +276,7 @@ class SessionController extends Controller
         return [
             'waba_id' => $data['waba_id'] ?? null,
             'phone_number_id' => $data['phone_number_id'] ?? null,
-            'app_id' => $data['app_id'] ?? null,
             'access_token' => $data['access_token'] ?? null,
-            'app_secret' => $data['app_secret'] ?? null,
         ];
     }
 

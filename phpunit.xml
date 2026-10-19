@@ -18,6 +18,7 @@
         </include>
     </source>
     <php>
+        <env name="LARAWA_CLOUD_ONLY" value="false" force="true"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_KEY" value="base64:PfB3ztkQnSJYwukOQxR/WWPJEJydg3nFSwaygkOX6ZI="/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

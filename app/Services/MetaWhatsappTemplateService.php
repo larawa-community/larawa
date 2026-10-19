@@ -374,8 +374,9 @@ class MetaWhatsappTemplateService
 
     private function uploadSampleMedia(WhatsappCloudConfig $config, array $media): string
     {
-        if (! filled($config->app_id)) {
-            throw ValidationException::withMessages(['app_id' => 'Meta App ID is required to upload template sample media.']);
+        $appId = config('larawa.meta.app_id');
+        if (! filled($appId)) {
+            throw ValidationException::withMessages(['app_id' => 'Ask a platform administrator to set the Meta App ID in System Settings before uploading template sample media.']);
         }
         $contents = base64_decode((string) ($media['data_base64'] ?? ''), true);
         if (! is_string($contents)) {
@@ -385,7 +386,7 @@ class MetaWhatsappTemplateService
             throw ValidationException::withMessages(['header.sample_media.data_base64' => 'Sample media exceeds the configured media size limit.']);
         }
 
-        $session = $this->request(fn () => $this->http($config)->asForm()->post($this->url($config->app_id.'/uploads'), [
+        $session = $this->request(fn () => $this->http($config)->asForm()->post($this->url($appId.'/uploads'), [
             'file_name' => $media['filename'],
             'file_length' => strlen($contents),
             'file_type' => $media['mime_type'],

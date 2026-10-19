@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessMetaWhatsappWebhook;
 use App\Models\MetaWebhookReceipt;
+use App\Models\WhatsappCloudConfig;
 use App\Models\WhatsappSession;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -13,10 +14,12 @@ use Illuminate\Support\Facades\Log;
 
 class MetaWhatsappWebhookController extends Controller
 {
-    public function verify(Request $request, WhatsappSession $session): Response
+    public function verify(Request $request, ?WhatsappSession $session = null): Response
     {
-        abort_unless($session->isCloudApi() && $session->cloudConfig && $session->workspace?->allowsSessionType($session->type), 404);
-        $token = (string) $session->cloudConfig->verify_token;
+        if ($session) {
+            abort_unless($session->isCloudApi() && $session->workspace?->allowsSessionType($session->type), 404);
+        }
+        $token = (string) config('larawa.meta.verify_token');
         $provided = (string) $request->query('hub_verify_token', $request->query('hub.verify_token', ''));
         $mode = (string) $request->query('hub_mode', $request->query('hub.mode', ''));
         $challenge = (string) $request->query('hub_challenge', $request->query('hub.challenge', ''));
@@ -28,9 +31,11 @@ class MetaWhatsappWebhookController extends Controller
         return response('Invalid webhook verification token.', 403);
     }
 
-    public function receive(Request $request, WhatsappSession $session): JsonResponse
+    public function receive(Request $request, ?WhatsappSession $session = null): JsonResponse
     {
-        abort_unless($session->isCloudApi() && $session->cloudConfig && $session->workspace?->allowsSessionType($session->type), 404);
+        if ($session) {
+            abort_unless($session->isCloudApi() && $session->workspace?->allowsSessionType($session->type), 404);
+        }
         $raw = $request->getContent();
         if (strlen($raw) > 3 * 1024 * 1024) {
             return response()->json(['message' => 'WhatsApp webhook payload exceeds Meta\'s 3 MB limit.'], 413);
@@ -40,21 +45,20 @@ class MetaWhatsappWebhookController extends Controller
             return response()->json(['message' => 'Invalid WhatsApp webhook payload.'], 400);
         }
 
-        if (! filled($session->cloudConfig->app_secret)) {
+        if (! filled(config('larawa.meta.app_secret'))) {
             return response()->json(['message' => 'Complete the Meta app settings before receiving webhooks.'], 409);
         }
 
         $signature = (string) $request->header('X-Hub-Signature-256');
-        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) $session->cloudConfig->app_secret);
+        $expected = 'sha256='.hash_hmac('sha256', $raw, (string) config('larawa.meta.app_secret'));
         if ($signature === '' || ! hash_equals($expected, $signature)) {
             return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }
 
-        $phoneIds = $this->phoneNumberIds($payload);
-        if (! in_array($session->cloudConfig->phone_number_id, $phoneIds, true)) {
-            Log::notice('Meta WhatsApp webhook did not match the callback session phone number ID.', [
-                'session_uuid' => $session->uuid,
-                'phone_number_ids' => $phoneIds,
+        $accepted = $this->authorizedPayload($payload);
+        if ($accepted['entry'] === []) {
+            Log::notice('Meta WhatsApp webhook contained no authorized phone numbers for this callback.', [
+                'session_uuid' => $session?->uuid,
             ]);
 
             return response()->json(['ok' => true]);
@@ -62,8 +66,8 @@ class MetaWhatsappWebhookController extends Controller
 
         try {
             $receipt = MetaWebhookReceipt::create([
-                'payload_hash' => hash('sha256', $raw),
-                'payload' => $payload,
+                'payload_hash' => hash('sha256', $accepted === $payload ? $raw : $raw.json_encode($accepted)),
+                'payload' => $accepted,
                 'status' => 'pending',
             ]);
             ProcessMetaWhatsappWebhook::dispatch($receipt);
@@ -74,18 +78,48 @@ class MetaWhatsappWebhookController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    private function phoneNumberIds(array $payload): array
+    private function authorizedPayload(array $payload): array
     {
-        $ids = [];
+        $phoneIds = [];
         foreach ($payload['entry'] ?? [] as $entry) {
             foreach ($entry['changes'] ?? [] as $change) {
                 $id = data_get($change, 'value.metadata.phone_number_id');
                 if (is_string($id) && $id !== '') {
-                    $ids[] = $id;
+                    $phoneIds[] = $id;
                 }
             }
         }
 
-        return array_values(array_unique($ids));
+        // Authentication is site-wide; the configured phone number determines the workspace.
+        $configs = WhatsappCloudConfig::query()
+            ->whereIn('phone_number_id', array_unique($phoneIds))
+            ->whereHas('whatsappSession', fn ($query) => $query->where('type', WhatsappSession::TYPE_CLOUD))
+            ->with('whatsappSession.workspace')
+            ->get()
+            ->filter(fn ($config) => $config->whatsappSession?->workspace?->allowsSessionType(WhatsappSession::TYPE_CLOUD))
+            ->keyBy('phone_number_id');
+
+        $accepted = $payload;
+        $accepted['entry'] = [];
+        foreach ($payload['entry'] ?? [] as $entry) {
+            $changes = [];
+            foreach ($entry['changes'] ?? [] as $change) {
+                $phoneId = data_get($change, 'value.metadata.phone_number_id');
+                $config = is_string($phoneId) ? $configs->get($phoneId) : null;
+                if (! $config || ($change['field'] ?? null) !== 'messages') {
+                    continue;
+                }
+                if (isset($entry['id']) && (string) $entry['id'] !== (string) $config->waba_id) {
+                    continue;
+                }
+                $changes[] = $change;
+            }
+            if ($changes !== []) {
+                $entry['changes'] = $changes;
+                $accepted['entry'][] = $entry;
+            }
+        }
+
+        return $accepted;
     }
 }

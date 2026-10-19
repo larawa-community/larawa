@@ -218,19 +218,27 @@ Webhook signing secrets are encrypted at rest when `APP_KEY` is configured. Exis
 
 ## Official Meta WhatsApp Cloud API
 
-Keep `META_GRAPH_API_VERSION=v25.0` unless Meta requires another supported Graph version. First select **Official Cloud API** and create the session. LaraWA generates a unique encrypted verify token and a callback URL containing that session's UUID. Copy both values from the session page into its Meta app, then subscribe the WhatsApp Business Account to the `messages` field:
+Configure the shared Meta app once under **System Settings → Application Settings → Official Meta Cloud API** (platform administrators only):
+
+- `META_APP_ID`: the site's Facebook/Meta App ID, also used for template sample uploads.
+- `META_APP_SECRET`: the same app's secret, used to verify webhook signatures.
+- `META_WEBHOOK_VERIFY_TOKEN`: a strong token of at least 16 characters that you also enter in Meta.
+
+Save Settings, apply the pending runtime settings, and restart long-running queue workers. Copy the callback URL displayed there into Meta:
 
 ```text
-https://your-larawa-host.example/api/meta/whatsapp/webhook/{session-uuid}
+https://your-domain/api/meta/whatsapp/webhook
 ```
 
-After Meta accepts the callback URL and generated token, enter the WABA ID, phone number ID, long-lived system-user access token, and app secret on the LaraWA session page. Saving validates these settings through Graph API and discovers the display phone number from Meta; users do not enter the display phone number. Access tokens, app secrets, and verify tokens are encrypted with `APP_KEY`; access tokens and app secrets are never returned by the API.
+Subscribe to the `messages` field and subscribe the app to each customer's WABA. Create one Official Cloud API session per number, with only its WABA ID, unique phone number ID, and access token. Saving account credentials validates the number through Graph API. Sessions across all workspaces share the site app; signed webhook changes route by phone number ID to the owning workspace, check the WABA ID when supplied, and respect workspace session-type permissions. Other webhook fields and automated Embedded Signup are not implemented.
 
-The access token and phone number ID authorize and address Graph API message sends. The Meta App Secret is not sent to the `/messages` endpoint; LaraWA uses it locally to validate the `X-Hub-Signature-256` attached to webhook requests. Find the App Secret in **Meta App Dashboard → App settings → Basic**. It belongs to the Meta app, while LaraWA stores an encrypted copy on each Official session so callbacks remain session-scoped.
+When upgrading from session-level app settings, copy the intended app credentials into System Settings before switching Meta to the site callback and shared verify token. Old session URLs remain aliases that use only the new site credentials; they no longer use session secrets or tokens. Existing database app fields are retained for recovery but ignored at runtime. Session APIs reject app settings and never return the shared verify token. All account access tokens must belong to the selected site app and have access to their respective WABAs. Sites previously using several Meta apps must consolidate those accounts onto the chosen app.
+
+The app secret is not sent to the message API. Per-session access tokens remain encrypted with `APP_KEY`. Shared Meta settings use the existing protected site environment configuration. Sending credentials can be configured independently of webhook setup; inbound delivery requires the shared app secret and successful callback verification.
 
 Template management requires a system-user access token with `whatsapp_business_management`; message sends require `whatsapp_business_messaging`. Template listing and detail pages fetch every result page directly from Meta and use the numeric Meta template ID in dashboard and API URLs. `GET .../templates/{template_id}` also returns a normalized `parameter_schema` for client-generated send forms. Direct sends should submit `template_id` plus those parameter keys; LaraWA derives the immutable template name and language from Meta. LaraWA does not write template responses to its local template table. The existing table is retained only as a non-destructive legacy schema artifact. Creating or editing a template submits it to Meta and returns the live response without changing the Cloud session's connection state when template-management permission is missing. The legacy `POST .../templates/sync` API route remains compatible but now performs a direct refresh without persisting template data.
 
-Text-header templates do not need an App ID. Image, video, and document header templates require sample media for Meta review, so configure the numeric Meta App ID on that Cloud session before creating them. LaraWA uploads the supplied sample through Meta's resumable upload API and stores only the returned handle in the template definition. Template names and languages cannot be edited; create a separate template when either must change. Remote template deletion and advanced Authentication, catalog, carousel, Flow, and location templates are not supported in this release.
+Text-header templates do not need an App ID. Image, video, and document header templates require sample media for Meta review, so have a platform administrator configure the numeric Meta App ID in System Settings before creating them. LaraWA uploads the supplied sample through Meta's resumable upload API and stores only the returned handle in the template definition. Template names and languages cannot be edited; create a separate template when either must change. Remote template deletion and advanced Authentication, catalog, carousel, Flow, and location templates are not supported in this release.
 
 Incoming customer messages are grouped into a local conversation inbox. LaraWA uses Meta's provider timestamp—not a database insertion time—to open a 24-hour customer-service window. Workspace users may reply with free-form text while that window is open; after it closes, Meta-bound free-form sends are rejected locally and an active `APPROVED` template must be used. The inbox, session status, and template catalog refresh only when an operator requests it; Official Cloud API pages never run Wrapper-style QR polling.
 
@@ -255,3 +263,11 @@ Use `docs/acceptance.md` as the release acceptance matrix. It maps each product 
 For an already-running stack, `scripts/smoke-dashboard.sh` logs in through the dashboard, creates a scoped API key through the dashboard form, verifies API-key authentication, creates a WhatsApp session through the dashboard form, checks the dashboard log/settings routes, and then cleans up the smoke session/key. Set `LARAWA_SMOKE_ADMIN_EMAIL` and `LARAWA_SMOKE_ADMIN_PASSWORD` when the stack has already been initialized.
 
 For live WhatsApp proof after QR pairing, use `scripts/live-validate.sh`. With `LARAWA_WEBHOOK_ID`, `LARAWA_RESTART_WORKER=1`, and `LARAWA_WAIT_INCOMING_SECONDS=120`, it verifies ready-session persistence after worker restart, text/image send acceptance, stored media download, webhook test delivery status, an incoming marker message in LaraWA, and the corresponding `message.received` webhook delivery.
+
+## Cloud API-only Deployment
+
+Set `LARAWA_CLOUD_ONLY=true` in `.env` before setup to use only Official Cloud API sessions. The installer omits worker settings, diagnostics skip the worker token, and Wrapper sessions are hidden and blocked. Existing Wrapper data is retained.
+
+For a non-Docker installation, run Laravel with PHP-FPM, a database, the Laravel queue worker, and the scheduler. No WhatsApp Node.js worker or Chromium is needed; Node.js is only needed to build frontend assets if they are not built elsewhere. Complete setup, create an Official Cloud API session, and configure its Meta credentials and webhook.
+
+With Docker, start only the required services: `docker compose up -d --build app nginx queue scheduler`. Do not start `wa-worker`. After changing the setting on an existing installation, run `php artisan config:cache` and restart long-running Laravel processes. For Docker installations with an existing installer-managed environment, also set the flag in `storage/app/larawa/.env`.
