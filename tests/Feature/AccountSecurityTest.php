@@ -209,6 +209,36 @@ class AccountSecurityTest extends TestCase
             ->assertSee('Sign in with passkey');
     }
 
+    public function test_failed_login_displays_error_after_redirect(): void
+    {
+        $user = $this->dashboardUser();
+
+        $this->followingRedirects()->from(route('login'))->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ])->assertOk()
+            ->assertSee('role="alert"', false)
+            ->assertSee(__('auth.failed'));
+        $this->assertGuest();
+    }
+
+    public function test_failed_two_factor_challenge_displays_error_after_redirect(): void
+    {
+        $user = $this->userWithTwoFactor();
+
+        $this->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect(route('login.two-factor'));
+
+        $this->followingRedirects()->from(route('login.two-factor'))
+            ->post(route('login.two-factor.store'), ['code' => 'invalid-code'])
+            ->assertOk()
+            ->assertSee('role="alert"', false)
+            ->assertSee(__('auth.two_factor.invalid'));
+        $this->assertGuest();
+    }
+
     public function test_passkey_account_page_lists_passkeys_and_uses_password_confirmation_hooks(): void
     {
         $user = $this->dashboardUser('workspace_user');

@@ -18,6 +18,9 @@
             </div>
             <form method="POST" action="{{ route('login.store') }}" class="space-y-5">
                 @csrf
+                @if ($errors->any())
+                    <div role="alert" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ $errors->first() }}</div>
+                @endif
                 <label class="block">
                     <span class="mb-1 block text-sm font-medium text-slate-700">{{ __('auth.login.email') }}</span>
                     <input name="email" type="email" value="{{ old('email') }}" required autofocus autocomplete="email webauthn" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/20">

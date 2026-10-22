@@ -121,6 +121,11 @@ class SiteSettings
                 config([$path => $value]);
             }
         }
+        // Settings entered as dotenv-style null values must produce host-only cookies.
+        $domain = config('session.domain');
+        if (is_string($domain) && in_array(strtolower(trim($domain)), ['', 'null', '(null)'], true)) {
+            config(['session.domain' => null]);
+        }
         config(['filesystems.disks.public.url' => rtrim((string) config('app.url'), '/').'/storage']);
         date_default_timezone_set(config('app.timezone', 'UTC'));
     }

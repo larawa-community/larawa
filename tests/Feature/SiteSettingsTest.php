@@ -15,6 +15,20 @@ class SiteSettingsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_dotenv_null_session_domains_produce_host_only_cookies(): void
+    {
+        foreach (['null', '(null)', ' NULL ', ''] as $domain) {
+            app(SiteSettings::class)->save(['SESSION_DOMAIN' => $domain]);
+            app(SiteSettings::class)->apply();
+
+            $this->assertNull(config('session.domain'));
+        }
+
+        app(SiteSettings::class)->save(['SESSION_DOMAIN' => '.lara-wa.org']);
+        app(SiteSettings::class)->apply();
+        $this->assertSame('.lara-wa.org', config('session.domain'));
+    }
+
     public function test_admin_saves_encrypted_database_settings_without_environment_or_cache_writes(): void
     {
         $this->mock(EnvironmentFile::class)->makePartial()->shouldReceive('update')->never();
