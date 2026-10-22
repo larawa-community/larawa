@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
+use App\Services\MetaAppSettings;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -18,11 +19,11 @@ class CloudRegistrationTestController extends Controller
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
         $this->assertSessionAllowed($workspace, $session);
         abort_unless($session->isCloudApi() && ! $workspace->suspended_at, 404);
-        $redirect = fn () => redirect()->route('dashboard.sessions.cloud-settings', $session);
+        $redirect = fn () => redirect()->route('dashboard.sessions.cloud-settings', $session)->with('registration_phone_'.$session->uuid, $request->input('phone_number_id'));
         $validator = Validator::make($request->all(), [
             'pin' => ['required', 'digits:6'],
             'confirmed' => ['accepted'],
-            'phone_number_id' => ['prohibited'],
+            'phone_number_id' => ['required', 'string', 'regex:/^[0-9]+$/', 'max:120'],
             'access_token' => ['prohibited'],
             'session_uuid' => ['prohibited'],
         ]);
@@ -31,10 +32,12 @@ class CloudRegistrationTestController extends Controller
         }
 
         $config = $session->cloudConfig;
-        $phoneNumberId = $config?->phone_number_id;
-        $accessToken = $config?->effectiveAccessToken();
-        if (! filled($phoneNumberId) || ! filled($accessToken)) {
-            $message = 'Save this session’s phone number ID and configure the provider token in System Settings before registration.';
+        $phoneNumberId = $request->input('phone_number_id');
+        abort_if(WhatsappSession::where('workspace_id', '!=', $workspace->id)
+            ->whereHas('cloudConfig', fn ($query) => $query->where('phone_number_id', $phoneNumberId))->exists(), 403, 'This phone number belongs to another workspace.');
+        $accessToken = app(MetaAppSettings::class)->providerToken() ?: $config?->effectiveAccessToken();
+        if (! filled($accessToken)) {
+            $message = 'Ask a site administrator to configure the provider token in System Settings before registration.';
 
             return $redirect()->withErrors(['configuration' => $message], 'registration')->with('registration_errors_'.$session->uuid, [$message]);
         }

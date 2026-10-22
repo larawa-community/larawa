@@ -101,11 +101,11 @@ class SharedMetaProviderTokenTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_registration_uses_site_token_and_saved_phone_number(): void
+    public function test_registration_uses_site_token_and_entered_phone_number(): void
     {
         $session = $this->setupSession();
-        Http::fake(['*/phone-test/register' => Http::response(['success' => true])]);
-        $this->post(route('dashboard.sessions.cloud-account.register', $session), ['pin' => '123456', 'confirmed' => 1])
+        Http::fake(['*/987654321/register' => Http::response(['success' => true])]);
+        $this->post(route('dashboard.sessions.cloud-account.register', $session), ['phone_number_id' => '987654321', 'pin' => '123456', 'confirmed' => 1])
             ->assertSessionHas('registration_result_'.$session->uuid.'.success', true);
         Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer provider-secret'));
     }
