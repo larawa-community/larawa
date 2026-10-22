@@ -7,6 +7,7 @@ use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use App\Services\AuditLogger;
 use App\Services\Messaging\WhatsappTransportManager;
+use App\Services\MetaAppSettings;
 use App\Services\WhatsappSessionQuery;
 use App\Services\WhatsappSessionSync;
 use Illuminate\Http\Client\ConnectionException;
@@ -101,7 +102,7 @@ class SessionController extends Controller
             'verify_token' => ['prohibited'],
         ]);
 
-        abort_if($session->cloudConfig?->use_shared_token && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data)), 403, 'Shared provider credentials and account IDs must be managed by a site administrator.');
+        abort_if(($session->cloudConfig?->use_shared_token || filled(app(MetaAppSettings::class)->providerToken())) && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data)), 403, 'Shared provider credentials and account IDs must be managed by a site administrator.');
 
         if (array_key_exists('fallback_session_uuid', $data)) {
             $session->fallback_session_id = $this->resolveFallback($workspace, $data['fallback_session_uuid'], $session->type)?->id;

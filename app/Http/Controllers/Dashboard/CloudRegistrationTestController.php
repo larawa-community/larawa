@@ -5,85 +5,93 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
-use App\Services\MetaAppSettings;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 
 class CloudRegistrationTestController extends Controller
 {
-    public function index(Request $request)
+    public function store(Request $request, WhatsappSession $session, AuditLogger $audit)
     {
-        Gate::forUser($request->user())->authorize('platform.admin');
-
-        return view('dashboard.settings.meta-registration', [
-            'workspace' => $this->workspace($request),
-            'sessions' => $this->sessions()->with(['workspace', 'cloudConfig'])->orderBy('name')->get(),
-        ]);
-    }
-
-    public function store(Request $request, AuditLogger $audit)
-    {
-        Gate::forUser($request->user())->authorize('platform.admin');
-        // Never flash the PIN, including when validation fails.
-        $validator = Validator::make($request->only(['session_uuid', 'phone_number_id', 'access_token', 'pin', 'confirmed']), [
-            'session_uuid' => ['required', 'uuid'],
+        $workspace = $this->workspace($request);
+        $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
+        $this->assertSessionAllowed($workspace, $session);
+        abort_unless($session->isCloudApi() && ! $workspace->suspended_at, 404);
+        $redirect = fn () => redirect()->route('dashboard.sessions.cloud-settings', $session);
+        $validator = Validator::make($request->all(), [
             'pin' => ['required', 'digits:6'],
-            'phone_number_id' => ['required', 'string', 'regex:/^[0-9]+$/', 'max:120'],
-            'access_token' => ['nullable', 'string', 'max:8192'],
             'confirmed' => ['accepted'],
+            'phone_number_id' => ['prohibited'],
+            'access_token' => ['prohibited'],
+            'session_uuid' => ['prohibited'],
         ]);
-        $redirect = fn () => redirect()->route('dashboard.settings.meta-registration.index');
         if ($validator->fails()) {
-            return $redirect()->withErrors($validator)->withInput($request->only('session_uuid'));
+            return $redirect()->withErrors($validator, 'registration')->with('registration_errors_'.$session->uuid, $validator->errors()->all());
         }
 
-        $session = $this->sessions()->with('cloudConfig')->where('uuid', $request->input('session_uuid'))->firstOrFail();
         $config = $session->cloudConfig;
-        $phoneNumberId = $request->input('phone_number_id');
-        $accessToken = $request->filled('access_token') ? $request->input('access_token') : (app(MetaAppSettings::class)->providerToken() ?: $config?->effectiveAccessToken());
-        if (! filled($accessToken)) {
-            return $redirect()->withErrors(['access_token' => 'Enter an access token authorized for the entered phone number, or configure the provider token in System Settings. WABA ID is not required for registration.']);
+        $phoneNumberId = $config?->phone_number_id;
+        $accessToken = $config?->effectiveAccessToken();
+        if (! filled($phoneNumberId) || ! filled($accessToken)) {
+            $message = 'Save this session’s phone number ID and configure the provider token in System Settings before registration.';
+
+            return $redirect()->withErrors(['configuration' => $message], 'registration')->with('registration_errors_'.$session->uuid, [$message]);
         }
 
-        $path = '/'.config('larawa.meta.graph_version').'/'.$phoneNumberId.'/register';
-        try {
-            // No automatic retries: a timeout may occur after Meta processed registration.
-            $response = Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()
-                ->withToken($accessToken)
-                ->post(rtrim(config('larawa.meta.graph_url'), '/').$path, [
-                    'messaging_product' => 'whatsapp',
-                    'pin' => $request->input('pin'),
-                ]);
-        } catch (ConnectionException) {
-            return $redirect()->with('error', 'Meta could not be reached or the request timed out. Registration outcome is unknown; check WhatsApp Manager before retrying.');
-        }
-
-        $success = $response->successful() && $response->json('success') === true;
+        $pin = $request->input('pin');
+        $secrets = [$accessToken, $pin];
+        $url = rtrim(config('larawa.meta.graph_url'), '/').'/'.config('larawa.meta.graph_version').'/'.$phoneNumberId.'/register';
+        $body = ['messaging_product' => 'whatsapp', 'pin' => $pin];
         $result = [
-            'session' => $session->name,
-            'phone_number_id' => $phoneNumberId,
-            'http_status' => $response->status(),
-            'success' => $success,
+            'success' => false,
+            'request' => ['method' => 'POST', 'url' => $url, 'headers' => [], 'body' => $this->redact($body, $secrets)],
+            'response' => ['status' => null, 'headers' => [], 'body' => null],
+            'error' => null,
         ];
-        // Only expose useful diagnostics, never an arbitrary provider response or credentials.
-        foreach (['message', 'type', 'code', 'error_subcode', 'fbtrace_id'] as $field) {
-            $value = $response->json('error.'.$field);
-            if (is_scalar($value)) {
-                $result['error'][$field] = str_replace([$accessToken, $request->input('pin')], '[redacted]', (string) $value);
+        try {
+            // Do not retry: a timeout can happen after Meta has registered the phone.
+            $response = Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()->asJson()
+                ->withToken($accessToken)
+                ->beforeSending(function ($outgoing) use (&$result, $secrets) {
+                    $result['request']['headers'] = $this->redact($outgoing->headers(), $secrets);
+                })
+                ->post($url, $body);
+            $result['success'] = $response->successful() && $response->json('success') === true;
+            $rawBody = $response->body();
+            $decoded = json_decode($rawBody, true);
+            $safeBody = json_last_error() === JSON_ERROR_NONE
+                ? json_encode($this->redact($decoded, $secrets), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE)
+                : $this->redact($rawBody, $secrets);
+            $result['response'] = [
+                'status' => $response->status(),
+                'headers' => $this->redact($response->headers(), $secrets),
+                'body' => mb_strcut($safeBody, 0, 65536).(strlen($safeBody) > 65536 ? "\n[Response truncated after 64 KiB]" : ''),
+            ];
+            if (! $result['success']) {
+                $result['error'] = $this->redact($response->json('error.message') ?: 'Meta did not confirm registration. See the response below.', $secrets);
             }
+        } catch (ConnectionException $exception) {
+            $result['error'] = 'Registration outcome is unknown. Check WhatsApp Manager before retrying. '.$this->redact($exception->getMessage(), $secrets);
         }
-        $audit->log('cloud_account.registration_test', $session->workspace, $request->user(), auditable: $session,
-            metadata: ['http_status' => $response->status(), 'success' => $success], request: $request);
 
-        return $redirect()->with('registration_result', $result)->withInput($request->only('session_uuid'));
+        $audit->log('cloud_account.registration_test', $workspace, $request->user(), auditable: $session,
+            metadata: ['http_status' => $result['response']['status'], 'success' => $result['success']], request: $request);
+
+        return $redirect()->with('registration_result_'.$session->uuid, $result);
     }
 
-    private function sessions()
+    private function redact(mixed $value, array $secrets): mixed
     {
-        return WhatsappSession::query()->where('type', WhatsappSession::TYPE_CLOUD)
-            ->whereHas('workspace', fn ($query) => $query->where('allows_official_cloud_api', true)->whereNull('suspended_at'));
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                $sensitive = is_string($key) && preg_match('/authorization|cookie|token|secret|password|^pin$/i', $key);
+                $value[$key] = $sensitive ? '[redacted]' : $this->redact($item, $secrets);
+            }
+
+            return $value;
+        }
+
+        return is_string($value) ? str_replace($secrets, '[redacted]', $value) : $value;
     }
 }

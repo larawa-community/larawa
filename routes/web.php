@@ -151,8 +151,8 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::get('/messages', [LogController::class, 'messages'])->name('.messages.index');
         Route::get('/messages/{message}/media', [MessageMediaController::class, 'dashboard'])->name('.messages.media');
         Route::get('/audit-logs', [LogController::class, 'audit'])->name('.audit.index');
-        Route::get('/settings/meta-registration-test', [CloudRegistrationTestController::class, 'index'])->name('.settings.meta-registration.index');
-        Route::post('/settings/meta-registration-test', [CloudRegistrationTestController::class, 'store'])->middleware('throttle:5,1')->name('.settings.meta-registration.store');
+        Route::get('/settings/meta-registration-test', fn () => redirect()->route('dashboard.sessions.index'))->name('.settings.meta-registration.index');
+        Route::post('/sessions/{session}/cloud-account/register', [CloudRegistrationTestController::class, 'store'])->middleware('throttle:5,1')->name('.sessions.cloud-account.register');
         Route::get('/settings', [SettingsController::class, 'index'])->name('.settings.index');
         Route::patch('/settings', [SettingsController::class, 'update'])->name('.settings.update');
         Route::patch('/settings/meta-app', [SettingsController::class, 'updateMeta'])->name('.settings.meta-app.update');

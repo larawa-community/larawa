@@ -124,7 +124,7 @@
                     @elseif ($session->isCloudApi())
                         <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WhatsApp Business Account (WABA) ID" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="Phone number ID from WhatsApp API Setup" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-                        <p class="text-xs text-slate-500">The Meta app, provider token, and webhook are managed in System Settings. A site administrator can select the shared token in Cloud Settings.</p>
+                        <p class="text-xs text-slate-500">The Meta app, provider token, and webhook are managed in System Settings. The provider token applies to all Cloud API sessions.</p>
                     @endif
                     <button class="rounded-md bg-[#128c42] px-3 py-2 text-sm font-semibold text-white">Save settings</button>
                 </form>

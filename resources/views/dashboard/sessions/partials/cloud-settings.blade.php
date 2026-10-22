@@ -20,22 +20,8 @@
         @if ($canManageSessions)
             <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="space-y-5 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Validating configuration with Meta…">
                 @csrf @method('PATCH')
-                @can('platform.admin')
-                    <label class="block text-sm font-semibold text-slate-700">Access token source
-                        <select name="use_shared_token" class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
-                            @if (filled($session->cloudConfig?->access_token))
-                                <option value="0" @selected(! $session->cloudConfig?->use_shared_token)>Existing saved token (legacy)</option>
-                            @endif
-                            <option value="1" @selected($session->cloudConfig?->use_shared_token || ! filled($session->cloudConfig?->access_token))>Shared provider token from System Settings</option>
-                        </select>
-                        <span class="mt-1 block text-xs font-normal text-slate-500">Select the shared token only after confirming this workspace owns the WABA and phone number below and our system user has access.</span>
-                    </label>
-                @else
-                    @if ($session->cloudConfig?->use_shared_token)
-                        <p class="text-sm text-slate-600">Uses the shared provider token. A site administrator manages the account IDs and token source.</p>
-                    @endif
-                @endcan
-                <fieldset @disabled($session->cloudConfig?->use_shared_token && ! auth()->user()->can('platform.admin')) class="grid gap-4 sm:grid-cols-2">
+                <p class="text-sm text-slate-600">The provider access token is managed in System Settings and applies to all Cloud API sessions.</p>
+                <fieldset @disabled(($session->cloudConfig?->use_shared_token || filled(app(\App\Services\MetaAppSettings::class)->providerToken())) && ! auth()->user()->can('platform.admin')) class="grid gap-4 sm:grid-cols-2">
                     <label class="block text-sm font-semibold text-slate-700">
                         WhatsApp Business Account ID
                         <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WABA ID" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
@@ -56,6 +42,7 @@
     </section>
 
     @if ($canManageSessions)
+        @include('dashboard.sessions.partials.cloud-registration')
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:px-6">
                 <div>
@@ -151,7 +138,7 @@
         @if ($canManageSessions)
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Shared Meta app</h3>
-                <p class="mt-2 text-xs leading-5 text-slate-500">The Meta App ID, App Secret, and webhook are managed once for the entire site by a platform administrator. This session keeps its WABA ID and phone number ID. The provider access token is managed in System Settings. A site administrator selects it for this session.</p>
+                <p class="mt-2 text-xs leading-5 text-slate-500">The Meta App ID, App Secret, and webhook are managed once for the entire site by a platform administrator. This session keeps its WABA ID and phone number ID. The provider access token is managed centrally in System Settings.</p>
                 @can('platform.admin')
                     <a href="{{ route('dashboard.settings.index') }}" class="mt-3 inline-block text-sm font-semibold text-[#128c42]">Open System Settings</a>
                 @endcan

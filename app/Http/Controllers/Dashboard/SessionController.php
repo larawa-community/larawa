@@ -160,13 +160,13 @@ class SessionController extends Controller
             'phone_number_id' => ['nullable', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'app_id' => ['prohibited'],
             'access_token' => ['nullable', 'string'],
-            'use_shared_token' => ['sometimes', 'boolean'],
+            'use_shared_token' => ['prohibited'],
             'app_secret' => ['prohibited'],
             'verify_token' => ['prohibited'],
         ]);
 
-        if (array_key_exists('use_shared_token', $data)
-            || ($session->cloudConfig?->use_shared_token && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data)))) {
+        if (($session->cloudConfig?->use_shared_token || filled(app(MetaAppSettings::class)->providerToken()))
+            && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data))) {
             Gate::forUser($request->user())->authorize('platform.admin');
         }
 
@@ -187,9 +187,6 @@ class SessionController extends Controller
                 'phone_number_id' => $data['phone_number_id'] ?? null,
                 'access_token' => $data['access_token'] ?? null,
             ], fn ($value) => filled($value));
-            if (array_key_exists('use_shared_token', $data)) {
-                $credentials['use_shared_token'] = $request->boolean('use_shared_token');
-            }
             if ($credentials !== []) {
                 $cloudConfig = $session->cloudConfig;
                 $prospective = array_merge([
@@ -197,10 +194,9 @@ class SessionController extends Controller
                     'phone_number_id' => $cloudConfig?->phone_number_id,
                     'access_token' => $cloudConfig?->access_token,
                 ], $credentials);
-                if ($credentials['use_shared_token'] ?? $cloudConfig?->use_shared_token) {
+                if (filled(app(MetaAppSettings::class)->providerToken()) || $cloudConfig?->use_shared_token) {
                     $prospective['access_token'] = app(MetaAppSettings::class)->providerToken();
                 }
-                unset($prospective['use_shared_token']);
                 $missing = collect($prospective)->filter(fn ($value) => ! filled($value))->keys();
                 if ($missing->isNotEmpty()) {
                     throw ValidationException::withMessages($missing->mapWithKeys(fn ($key) => [$key => 'This Meta app setting is required to activate the session.'])->all());

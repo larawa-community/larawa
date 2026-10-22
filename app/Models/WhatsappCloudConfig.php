@@ -19,9 +19,9 @@ class WhatsappCloudConfig extends Model
 
     public function effectiveAccessToken(): ?string
     {
-        return $this->use_shared_token
-            ? app(MetaAppSettings::class)->providerToken()
-            : $this->access_token;
+        $providerToken = app(MetaAppSettings::class)->providerToken();
+
+        return filled($providerToken) ? $providerToken : ($this->use_shared_token ? null : $this->access_token);
     }
 
     protected static function booted(): void
