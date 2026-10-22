@@ -51,6 +51,7 @@
             <p class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">Settings are stored in the database. The initial database connection, application key, deployment environment, and proxy configuration remain bootstrap settings from installation and cannot be changed here. Saving settings never rewrites .env.</p>
             <section id="settings-meta-app" class="rounded-lg border border-slate-200 bg-white p-5">
                 <h2 class="font-semibold">Meta App Settings</h2>
+                <a href="{{ route('dashboard.settings.meta-registration.index') }}" class="mt-2 inline-block text-sm font-semibold text-[#128c42]">Temporary phone registration test →</a>
                 <p class="mt-1 text-sm text-slate-500">One Meta app serves all Official sessions. These settings are stored in the database and take effect immediately.</p>
                 <form method="POST" action="{{ route('dashboard.settings.meta-app.update') }}" class="mt-4 space-y-4">
                     @csrf
