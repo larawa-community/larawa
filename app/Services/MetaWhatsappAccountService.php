@@ -103,7 +103,7 @@ class MetaWhatsappAccountService
     {
         return Http::timeout((int) config('larawa.meta.timeout', 30))
             ->acceptJson()
-            ->withToken($config->access_token);
+            ->withToken($config->effectiveAccessToken());
     }
 
     private function url(string $path): string

@@ -96,9 +96,12 @@ class SessionController extends Controller
             'phone_number_id' => ['sometimes', 'string', 'max:120', Rule::unique('whatsapp_cloud_configs')->ignore($session->cloudConfig?->id)],
             'app_id' => ['prohibited'],
             'access_token' => ['sometimes', 'string'],
+            'use_shared_token' => ['prohibited'],
             'app_secret' => ['prohibited'],
             'verify_token' => ['prohibited'],
         ]);
+
+        abort_if($session->cloudConfig?->use_shared_token && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data)), 403, 'Shared provider credentials and account IDs must be managed by a site administrator.');
 
         if (array_key_exists('fallback_session_uuid', $data)) {
             $session->fallback_session_id = $this->resolveFallback($workspace, $data['fallback_session_uuid'], $session->type)?->id;

@@ -211,7 +211,7 @@ class CloudApiWhatsappTransport implements WhatsappTransport
 
     private function http(WhatsappCloudConfig $config): PendingRequest
     {
-        return Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()->withToken($config->access_token);
+        return Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()->withToken($config->effectiveAccessToken());
     }
 
     private function url(string $path): string

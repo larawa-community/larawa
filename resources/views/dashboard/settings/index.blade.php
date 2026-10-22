@@ -62,6 +62,13 @@
                     <label class="block text-sm font-medium">Meta App Secret (webhook signing)
                         <input name="app_secret" type="password" autocomplete="new-password" placeholder="{{ $metaAppSecretConfigured ? 'Configured — leave blank to keep current secret' : 'Enter the Meta App Secret' }}" class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
                     </label>
+                    <label class="block text-sm font-medium">Provider system-user access token
+                        <input name="provider_access_token" type="password" autocomplete="new-password" maxlength="8192" placeholder="{{ $metaProviderTokenConfigured ? 'Configured — leave blank to keep current token' : 'Enter our provider system-user token' }}" class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
+                        <span class="mt-2 block text-xs font-normal text-slate-500">Stored encrypted. Used by sessions explicitly assigned to the shared provider token and the temporary registration page. The system user must have access to each customer’s WhatsApp account.</span>
+                    </label>
+                    @if ($metaProviderTokenConfigured)
+                        <label class="flex gap-2 text-sm"><input type="checkbox" name="clear_provider_token" value="1">Remove the saved provider token (sessions using it will stop working)</label>
+                    @endif
                     <button @disabled($metaTokenError) class="rounded-md bg-[#128c42] px-4 py-2 text-sm font-semibold text-white">Save Meta settings</button>
                 </form>
                 <div class="mt-5 space-y-4 border-t border-slate-200 pt-4">

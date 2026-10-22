@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\MetaAppSettings;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -10,9 +11,18 @@ use Illuminate\Support\Facades\Crypt;
 
 class WhatsappCloudConfig extends Model
 {
-    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'app_id', 'access_token', 'app_secret', 'verify_token'];
+    protected $fillable = ['whatsapp_session_id', 'waba_id', 'phone_number_id', 'app_id', 'access_token', 'app_secret', 'verify_token', 'use_shared_token'];
 
     protected $hidden = ['access_token', 'app_id', 'app_secret', 'verify_token'];
+
+    protected $casts = ['use_shared_token' => 'boolean'];
+
+    public function effectiveAccessToken(): ?string
+    {
+        return $this->use_shared_token
+            ? app(MetaAppSettings::class)->providerToken()
+            : $this->access_token;
+    }
 
     protected static function booted(): void
     {
@@ -31,7 +41,7 @@ class WhatsappCloudConfig extends Model
     {
         return filled($this->waba_id)
             && filled($this->phone_number_id)
-            && filled($this->access_token);
+            && filled($this->effectiveAccessToken());
     }
 
     protected function accessToken(): Attribute

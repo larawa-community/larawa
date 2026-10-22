@@ -29,12 +29,22 @@ class MetaAppSettings
         });
     }
 
-    public function save(string $appId, ?string $appSecret): void
+    public function providerToken(): ?string
+    {
+        return MetaAppSetting::find(1)?->provider_access_token;
+    }
+
+    public function save(string $appId, ?string $appSecret, ?string $providerToken = null, bool $clearProviderToken = false): void
     {
         $settings = $this->current();
         $settings->app_id = $appId;
         if (filled($appSecret)) {
             $settings->app_secret = $appSecret;
+        }
+        if ($clearProviderToken) {
+            $settings->provider_access_token = null;
+        } elseif (filled($providerToken)) {
+            $settings->provider_access_token = $providerToken;
         }
         $settings->save();
     }

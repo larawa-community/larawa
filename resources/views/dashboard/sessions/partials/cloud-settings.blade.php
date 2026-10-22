@@ -20,7 +20,20 @@
         @if ($canManageSessions)
             <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="space-y-5 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Validating configuration with Meta…">
                 @csrf @method('PATCH')
-                <div class="grid gap-4 sm:grid-cols-2">
+                @can('platform.admin')
+                    <label class="block text-sm font-semibold text-slate-700">Access token source
+                        <select name="use_shared_token" class="mt-2 block w-full rounded-md border border-slate-300 px-3 py-2">
+                            <option value="0" @selected(! $session->cloudConfig?->use_shared_token)>Session-specific token</option>
+                            <option value="1" @selected($session->cloudConfig?->use_shared_token)>Shared provider token from System Settings</option>
+                        </select>
+                        <span class="mt-1 block text-xs font-normal text-slate-500">Select the shared token only after confirming this workspace owns the WABA and phone number below and our system user has access.</span>
+                    </label>
+                @else
+                    @if ($session->cloudConfig?->use_shared_token)
+                        <p class="text-sm text-slate-600">Uses the shared provider token. A site administrator manages the account IDs and token source.</p>
+                    @endif
+                @endcan
+                <fieldset @disabled($session->cloudConfig?->use_shared_token && ! auth()->user()->can('platform.admin')) class="grid gap-4 sm:grid-cols-2">
                     <label class="block text-sm font-semibold text-slate-700">
                         WhatsApp Business Account ID
                         <input name="waba_id" value="{{ $session->cloudConfig?->waba_id }}" placeholder="WABA ID" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
@@ -30,11 +43,11 @@
                         <input name="phone_number_id" value="{{ $session->cloudConfig?->phone_number_id }}" placeholder="From WhatsApp API Setup" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
                     </label>
                     <label class="block text-sm font-semibold text-slate-700">
-                        System-user access token
+                        Session-specific access token
                         <input name="access_token" type="password" autocomplete="new-password" placeholder="Leave blank to keep current token" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
-                        <span class="mt-1.5 block text-xs font-normal leading-5 text-slate-500">Needs WhatsApp messaging permission; template management also needs business management permission.</span>
+                        <span class="mt-1.5 block text-xs font-normal leading-5 text-slate-500">Used when the token source is session-specific. Leave blank to keep the saved token. Shared provider tokens are managed in System Settings.</span>
                     </label>
-                </div>
+                </fieldset>
                 <div class="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5">
                     <button class="rounded-lg bg-[#128c42] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0f7a39]">Save configuration</button>
                     <span class="text-xs text-slate-500">Saving complete credentials validates them with Meta.</span>
@@ -141,7 +154,7 @@
         @if ($canManageSessions)
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Shared Meta app</h3>
-                <p class="mt-2 text-xs leading-5 text-slate-500">The Meta App ID, App Secret, and webhook are managed once for the entire site by a platform administrator. This session only needs its WABA ID, phone number ID, and access token.</p>
+                <p class="mt-2 text-xs leading-5 text-slate-500">The Meta App ID, App Secret, and webhook are managed once for the entire site by a platform administrator. This session keeps its WABA ID and phone number ID. A site administrator can select the shared provider token; separately authorized accounts can use a session-specific token.</p>
                 @can('platform.admin')
                     <a href="{{ route('dashboard.settings.index') }}" class="mt-3 inline-block text-sm font-semibold text-[#128c42]">Open System Settings</a>
                 @endcan

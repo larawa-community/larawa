@@ -221,7 +221,7 @@ class MetaWhatsappTemplateService
         }
 
         $config = $session->cloudConfig()->first();
-        if (! $config || ! filled($config->waba_id) || ! filled($config->access_token)) {
+        if (! $config || ! filled($config->waba_id) || ! filled($config->effectiveAccessToken())) {
             throw ValidationException::withMessages(['session' => 'Complete the WABA ID and access token before managing templates.']);
         }
 
@@ -451,7 +451,7 @@ class MetaWhatsappTemplateService
 
     private function http(WhatsappCloudConfig $config): PendingRequest
     {
-        return Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()->withToken($config->access_token);
+        return Http::timeout((int) config('larawa.meta.timeout', 30))->acceptJson()->withToken($config->effectiveAccessToken());
     }
 
     private function url(string $path): string

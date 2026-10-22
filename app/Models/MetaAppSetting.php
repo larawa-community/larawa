@@ -8,9 +8,9 @@ class MetaAppSetting extends Model
 {
     public $incrementing = false;
 
-    protected $fillable = ['id', 'verify_token', 'app_id', 'app_secret', 'credentials_initialized'];
+    protected $fillable = ['id', 'verify_token', 'app_id', 'app_secret', 'credentials_initialized', 'provider_access_token'];
 
-    protected $hidden = ['verify_token', 'app_secret'];
+    protected $hidden = ['verify_token', 'app_secret', 'provider_access_token'];
 
-    protected $casts = ['verify_token' => 'encrypted', 'app_secret' => 'encrypted', 'credentials_initialized' => 'boolean'];
+    protected $casts = ['provider_access_token' => 'encrypted', 'verify_token' => 'encrypted', 'app_secret' => 'encrypted', 'credentials_initialized' => 'boolean'];
 }

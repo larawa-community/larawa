@@ -205,8 +205,10 @@ class SettingsController extends Controller
         $data = $request->validate([
             'app_id' => ['required', 'string', 'regex:/^[0-9]+$/', 'max:120'],
             'app_secret' => ['nullable', 'string', 'max:1000'],
+            'provider_access_token' => ['nullable', 'string', 'max:8192'],
+            'clear_provider_token' => ['sometimes', 'boolean'],
         ]);
-        $settings->save($data['app_id'], $data['app_secret'] ?? null);
+        $settings->save($data['app_id'], $data['app_secret'] ?? null, $data['provider_access_token'] ?? null, $request->boolean('clear_provider_token'));
 
         return redirect()->route('dashboard.settings.index')->with('status', 'Meta app settings saved to the database. Changes take effect immediately.');
     }
@@ -239,10 +241,12 @@ class SettingsController extends Controller
         $metaTokenError = null;
         $metaAppId = '';
         $metaAppSecretConfigured = false;
+        $metaProviderTokenConfigured = false;
         try {
             $meta = app(MetaAppSettings::class)->current();
             $metaAppId = $meta->app_id;
             $metaAppSecretConfigured = filled($meta->app_secret);
+            $metaProviderTokenConfigured = filled($meta->provider_access_token);
             $current['META_WEBHOOK_VERIFY_TOKEN'] = $meta->verify_token;
         } catch (\RuntimeException $exception) {
             report($exception);
@@ -264,6 +268,7 @@ class SettingsController extends Controller
             'metaTokenError' => $metaTokenError,
             'metaAppId' => $metaAppId,
             'metaAppSecretConfigured' => $metaAppSecretConfigured,
+            'metaProviderTokenConfigured' => $metaProviderTokenConfigured,
             'metaVerifyToken' => $current['META_WEBHOOK_VERIFY_TOKEN'],
 
             'environmentOverview' => [
