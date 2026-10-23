@@ -47,6 +47,13 @@ class WhatsappSession extends Model
         'last_seen_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::deleted(function (self $session): void {
+            $session->cloudConfig()->update(['phone_number_id' => null]);
+        });
+    }
+
     public function uniqueIds(): array
     {
         return ['uuid'];

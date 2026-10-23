@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -70,6 +71,59 @@ class CloudSessionSettingsTest extends TestCase
             'waba_id' => '123456789', 'phone_number_id' => '111222333',
         ])->assertForbidden();
         Http::assertNothingSent();
+    }
+
+    public function test_deleted_session_phone_number_can_be_reused(): void
+    {
+        $session = $this->setupSession();
+        $this->delete(route('dashboard.sessions.destroy', $session))->assertRedirect();
+        $this->assertNull($session->cloudConfig()->first()->phone_number_id);
+        $this->assertSoftDeleted($session);
+
+        $replacement = WhatsappSession::create([
+            'workspace_id' => $session->workspace_id, 'name' => 'Replacement',
+            'type' => WhatsappSession::TYPE_CLOUD,
+        ]);
+        $replacement->cloudConfig()->create(['access_token' => 'private-token']);
+        Http::fake(['*' => Http::response(['display_phone_number' => '+15550001111'])]);
+
+        $this->patch(route('dashboard.sessions.update', $replacement), [
+            'waba_id' => '123456789', 'phone_number_id' => '987654321',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame('987654321', $replacement->fresh()->cloudConfig->phone_number_id);
+    }
+
+    public function test_active_session_phone_number_cannot_be_reused(): void
+    {
+        $session = $this->setupSession();
+        $other = WhatsappSession::create([
+            'workspace_id' => $session->workspace_id, 'name' => 'Other',
+            'type' => WhatsappSession::TYPE_CLOUD,
+        ]);
+        $other->cloudConfig()->create(['phone_number_id' => '111222333']);
+
+        $this->patch(route('dashboard.sessions.update', $session), [
+            'waba_id' => '123456789', 'phone_number_id' => '111222333',
+        ])->assertSessionHasErrors('phone_number_id');
+        $this->assertSame('987654321', $session->fresh()->cloudConfig->phone_number_id);
+        Http::assertNothingSent();
+    }
+
+    public function test_migration_releases_only_previously_deleted_session_ids(): void
+    {
+        $session = $this->setupSession();
+        $deleted = WhatsappSession::create([
+            'workspace_id' => $session->workspace_id, 'name' => 'Previously deleted',
+            'type' => WhatsappSession::TYPE_CLOUD,
+        ]);
+        $deleted->cloudConfig()->create(['phone_number_id' => '111222333']);
+        DB::table('whatsapp_sessions')->where('id', $deleted->id)->update(['deleted_at' => now()]);
+
+        $migration = require database_path('migrations/2026_10_24_000000_release_deleted_session_phone_number_ids.php');
+        $migration->up();
+
+        $this->assertNull($deleted->cloudConfig()->first()->phone_number_id);
+        $this->assertSame('987654321', $session->fresh()->cloudConfig->phone_number_id);
     }
 
     public function test_registration_endpoint_is_removed(): void
