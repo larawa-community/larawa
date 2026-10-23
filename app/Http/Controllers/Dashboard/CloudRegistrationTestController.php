@@ -19,6 +19,9 @@ class CloudRegistrationTestController extends Controller
         $this->authorizeWorkspace($request, 'sessions.manage', $session->workspace);
         $this->assertSessionAllowed($workspace, $session);
         abort_unless($session->isCloudApi() && ! $workspace->suspended_at, 404);
+        $config = $session->cloudConfig;
+        abort_if(filled($config?->waba_id) && filled($config?->phone_number_id), 409,
+            'Phone registration is unavailable once the WABA ID and phone number ID are saved.');
         $redirect = fn () => redirect()->route('dashboard.sessions.cloud-settings', $session)->with('registration_phone_'.$session->uuid, $request->input('phone_number_id'));
         $validator = Validator::make($request->all(), [
             'pin' => ['required', 'digits:6'],
@@ -31,7 +34,6 @@ class CloudRegistrationTestController extends Controller
             return $redirect()->withErrors($validator, 'registration')->with('registration_errors_'.$session->uuid, $validator->errors()->all());
         }
 
-        $config = $session->cloudConfig;
         $phoneNumberId = $request->input('phone_number_id');
         abort_if(WhatsappSession::where('workspace_id', '!=', $workspace->id)
             ->whereHas('cloudConfig', fn ($query) => $query->where('phone_number_id', $phoneNumberId))->exists(), 403, 'This phone number belongs to another workspace.');

@@ -42,7 +42,9 @@
     </section>
 
     @if ($canManageSessions)
-        @include('dashboard.sessions.partials.cloud-registration')
+        @unless (filled($session->cloudConfig?->waba_id) && filled($session->cloudConfig?->phone_number_id))
+            @include('dashboard.sessions.partials.cloud-registration')
+        @endunless
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:px-6">
                 <div>

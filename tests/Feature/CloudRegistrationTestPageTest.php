@@ -53,6 +53,24 @@ class CloudRegistrationTestPageTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_saved_account_ids_hide_registration_and_block_direct_requests(): void
+    {
+        $session = $this->setupSession();
+        $session->cloudConfig()->update(['waba_id' => '123456789', 'access_token' => null]);
+
+        $this->get(route('dashboard.sessions.cloud-settings', $session))->assertOk()
+            ->assertDontSee('Cloud API phone registration')
+            ->assertDontSee('Phone number ID to register');
+
+        foreach (['987654321', '111222333'] as $phoneNumberId) {
+            $this->post(route('dashboard.sessions.cloud-account.register', $session), [
+                'phone_number_id' => $phoneNumberId, 'pin' => '123456', 'confirmed' => 1,
+            ])->assertStatus(409);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_cannot_register_another_workspaces_session(): void
     {
         $session = $this->setupSession();
