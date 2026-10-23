@@ -5,7 +5,6 @@ use App\Http\Controllers\Dashboard\AccountSecurityController;
 use App\Http\Controllers\Dashboard\ApiKeyController;
 use App\Http\Controllers\Dashboard\CloudAccountController;
 use App\Http\Controllers\Dashboard\CloudConversationController;
-use App\Http\Controllers\Dashboard\CloudRegistrationTestController;
 use App\Http\Controllers\Dashboard\CloudTemplateController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Dashboard\LogController;
@@ -152,7 +151,6 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::get('/messages/{message}/media', [MessageMediaController::class, 'dashboard'])->name('.messages.media');
         Route::get('/audit-logs', [LogController::class, 'audit'])->name('.audit.index');
         Route::get('/settings/meta-registration-test', fn () => redirect()->route('dashboard.sessions.index'))->name('.settings.meta-registration.index');
-        Route::post('/sessions/{session}/cloud-account/register', [CloudRegistrationTestController::class, 'store'])->middleware('throttle:5,1')->name('.sessions.cloud-account.register');
         Route::get('/settings', [SettingsController::class, 'index'])->name('.settings.index');
         Route::patch('/settings', [SettingsController::class, 'update'])->name('.settings.update');
         Route::patch('/settings/meta-app', [SettingsController::class, 'updateMeta'])->name('.settings.meta-app.update');

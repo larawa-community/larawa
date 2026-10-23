@@ -82,13 +82,13 @@ class SharedMetaProviderTokenTest extends TestCase
         $this->assertSame('provider-secret', $session->cloudConfig->effectiveAccessToken());
     }
 
-    public function test_workspace_admin_cannot_enable_shared_token_or_retarget_bound_session(): void
+    public function test_workspace_admin_cannot_change_provider_credentials(): void
     {
         $session = $this->setupSession('workspace_admin');
         $this->patch(route('dashboard.settings.meta-app.update'), ['app_id' => '1234', 'provider_access_token' => 'unauthorized'])->assertForbidden();
-        $this->patch(route('dashboard.sessions.update', $session), ['phone_number_id' => 'another-client'])->assertForbidden();
+        $this->patch(route('dashboard.sessions.update', $session), ['access_token' => 'unauthorized'])->assertForbidden();
         $session->cloudConfig->update(['use_shared_token' => true]);
-        $this->patch(route('dashboard.sessions.update', $session), ['phone_number_id' => 'another-client'])->assertForbidden();
+        $this->patch(route('dashboard.sessions.update', $session), ['access_token' => 'unauthorized'])->assertForbidden();
         Http::assertNothingSent();
     }
 
@@ -99,16 +99,6 @@ class SharedMetaProviderTokenTest extends TestCase
         [, $key] = app(ApiKeyService::class)->create($session->workspace, 'Sessions', ['sessions:write']);
         $this->withToken($key)->patchJson('/api/v1/sessions/'.$session->uuid, ['phone_number_id' => 'another-client'])->assertForbidden();
         Http::assertNothingSent();
-    }
-
-    public function test_registration_uses_site_token_and_entered_phone_number(): void
-    {
-        $session = $this->setupSession();
-        $session->cloudConfig()->delete();
-        Http::fake(['*/987654321/register' => Http::response(['success' => true])]);
-        $this->post(route('dashboard.sessions.cloud-account.register', $session), ['phone_number_id' => '987654321', 'pin' => '123456', 'confirmed' => 1])
-            ->assertSessionHas('registration_result_'.$session->uuid.'.success', true);
-        Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer provider-secret'));
     }
 
     public function test_removing_provider_token_does_not_fall_back_to_old_session_token(): void

@@ -166,7 +166,7 @@ class SessionController extends Controller
         ]);
 
         if (($session->cloudConfig?->use_shared_token || filled(app(MetaAppSettings::class)->providerToken()))
-            && array_intersect(['waba_id', 'phone_number_id', 'access_token'], array_keys($data))) {
+            && array_key_exists('access_token', $data)) {
             Gate::forUser($request->user())->authorize('platform.admin');
         }
 
@@ -201,7 +201,7 @@ class SessionController extends Controller
                 if ($missing->isNotEmpty()) {
                     throw ValidationException::withMessages($missing->mapWithKeys(fn ($key) => [$key => 'This Meta app setting is required to activate the session.'])->all());
                 }
-                $session->cloudConfig()->update($credentials);
+                $session->cloudConfig()->updateOrCreate([], $credentials);
                 try {
                     $transports->for($session)->connect($session->load('cloudConfig'));
                 } catch (ConnectionException|RequestException $exception) {
