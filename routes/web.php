@@ -9,6 +9,7 @@ use App\Http\Controllers\Dashboard\CloudTemplateController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Dashboard\LogController;
 use App\Http\Controllers\Dashboard\MarketplaceController;
+use App\Http\Controllers\Dashboard\MetaWebhookLogController;
 use App\Http\Controllers\Dashboard\SessionController;
 use App\Http\Controllers\Dashboard\SettingsController;
 use App\Http\Controllers\Dashboard\UserController;
@@ -147,6 +148,8 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::delete('/webhooks/{webhook}', [WebhookController::class, 'destroy'])->name('.webhooks.destroy');
         Route::post('/webhook-deliveries/{delivery}/retry', [WebhookDeliveryController::class, 'retry'])->name('.webhook-deliveries.retry');
 
+        Route::get('/meta-webhook-logs', [MetaWebhookLogController::class, 'index'])->name('.meta-webhooks.index');
+        Route::get('/meta-webhook-logs/{log}', [MetaWebhookLogController::class, 'show'])->name('.meta-webhooks.show');
         Route::get('/messages', [LogController::class, 'messages'])->name('.messages.index');
         Route::get('/messages/{message}/media', [MessageMediaController::class, 'dashboard'])->name('.messages.media');
         Route::get('/audit-logs', [LogController::class, 'audit'])->name('.audit.index');

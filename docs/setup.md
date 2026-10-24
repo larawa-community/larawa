@@ -271,3 +271,13 @@ Set `LARAWA_CLOUD_ONLY=true` in `.env` before setup to use only Official Cloud A
 For a non-Docker installation, run Laravel with PHP-FPM, a database, the Laravel queue worker, and the scheduler. No WhatsApp Node.js worker or Chromium is needed; Node.js is only needed to build frontend assets if they are not built elsewhere. Complete setup, create an Official Cloud API session, and configure its Meta credentials and webhook.
 
 With Docker, start only the required services: `docker compose up -d --build app nginx queue scheduler`. Do not start `wa-worker`. After changing the setting on an existing installation, run `php artisan config:cache` and restart long-running Laravel processes. For Docker installations with an existing installer-managed environment, also set the flag in `storage/app/larawa/.env`.
+
+### Incoming Meta webhook diagnostics
+
+Site administrators can open **Meta Webhook Logs** in the sidebar (`/dashboard/meta-webhook-logs`) to inspect incoming callbacks. Deploy the application changes, run `php artisan migrate --force`, and rebuild assets with `npm run build` using the normal deployment workflow.
+
+Each new GET verification request or POST delivery reaching the webhook route gets a separate log entry, including invalid signatures, unknown phone numbers, WABA mismatches, unsupported event fields, and retries. The detail page shows the received payload, HTTP response, per-change routing decisions, and the linked processing receipt's current status, attempt count, and error. Search by Phone Number ID, WABA ID, event name, or message ID. A processed receipt can contain only delivery statuses; it does not necessarily create a message.
+
+The viewer is restricted to site administrators because payloads can contain customer messages across workspaces. Request headers and verification tokens are not captured. POST bodies are retained up to the existing 3 MB webhook limit; larger requests are marked truncated and rejected. Logs currently remain until removed through database maintenance. Logging failures are reported to Laravel's error log and do not deliberately reject webhook delivery.
+
+This log starts at deployment and cannot reconstruct earlier discarded callbacks. Requests blocked before reaching the application, or events Meta never delivers, will not appear. Send a fresh message to the affected phone number after deployment. If no new entry appears, inspect the web server's access logs and Meta's delivery configuration. If an entry appears, its HTTP response and routing decisions identify whether the callback was accepted or skipped.

@@ -64,7 +64,7 @@ class MetaWhatsappWebhookController extends Controller
             return response()->json(['message' => 'Invalid webhook signature.'], 401);
         }
 
-        $accepted = $this->authorizedPayload($payload);
+        $accepted = $this->authorizedPayload($payload, $request);
         if ($accepted['entry'] === []) {
             Log::notice('Meta WhatsApp webhook contained no authorized phone numbers for this callback.', [
                 'session_uuid' => $session?->uuid,
@@ -73,21 +73,24 @@ class MetaWhatsappWebhookController extends Controller
             return response()->json(['ok' => true]);
         }
 
+        $hash = hash('sha256', $accepted === $payload ? $raw : $raw.json_encode($accepted));
         try {
             $receipt = MetaWebhookReceipt::create([
-                'payload_hash' => hash('sha256', $accepted === $payload ? $raw : $raw.json_encode($accepted)),
+                'payload_hash' => $hash,
                 'payload' => $accepted,
                 'status' => 'pending',
             ]);
+            $request->attributes->set('meta_webhook_receipt_id', $receipt->id);
             ProcessMetaWhatsappWebhook::dispatch($receipt);
         } catch (UniqueConstraintViolationException) {
-            // Meta retries webhook deliveries; an identical raw payload is already queued or processed.
+            // Preserve every delivery log while keeping processing idempotent.
+            $request->attributes->set('meta_webhook_receipt_id', MetaWebhookReceipt::where('payload_hash', $hash)->value('id'));
         }
 
         return response()->json(['ok' => true]);
     }
 
-    private function authorizedPayload(array $payload): array
+    private function authorizedPayload(array $payload, Request $request): array
     {
         $phoneIds = [];
         foreach ($payload['entry'] ?? [] as $entry) {
@@ -108,6 +111,7 @@ class MetaWhatsappWebhookController extends Controller
             ->filter(fn ($config) => $config->whatsappSession?->workspace?->allowsSessionType(WhatsappSession::TYPE_CLOUD))
             ->keyBy('phone_number_id');
 
+        $routing = [];
         $accepted = $payload;
         $accepted['entry'] = [];
         foreach ($payload['entry'] ?? [] as $entry) {
@@ -115,10 +119,21 @@ class MetaWhatsappWebhookController extends Controller
             foreach ($entry['changes'] ?? [] as $change) {
                 $phoneId = data_get($change, 'value.metadata.phone_number_id');
                 $config = is_string($phoneId) ? $configs->get($phoneId) : null;
-                if (! $config || ($change['field'] ?? null) !== 'messages') {
-                    continue;
-                }
-                if (isset($entry['id']) && (string) $entry['id'] !== (string) $config->waba_id) {
+                $reason = match (true) {
+                    ($change['field'] ?? null) !== 'messages' => 'Unsupported event field; logged only',
+                    ! $config => 'Phone number not configured or Cloud API not enabled for workspace',
+                    isset($entry['id']) && (string) $entry['id'] !== (string) $config->waba_id => 'WABA ID does not match configured WABA',
+                    default => 'Accepted',
+                };
+                $routing[] = [
+                    'field' => $change['field'] ?? null,
+                    'phone_number_id' => $phoneId,
+                    'waba_id' => $entry['id'] ?? null,
+                    'configured_waba_id' => $config?->waba_id,
+                    'session_id' => $config?->whatsapp_session_id,
+                    'reason' => $reason,
+                ];
+                if ($reason !== 'Accepted') {
                     continue;
                 }
                 $changes[] = $change;
@@ -128,6 +143,8 @@ class MetaWhatsappWebhookController extends Controller
                 $accepted['entry'][] = $entry;
             }
         }
+
+        $request->attributes->set('meta_webhook_routing', $routing);
 
         return $accepted;
     }

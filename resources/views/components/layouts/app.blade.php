@@ -59,6 +59,7 @@
                                 [__('dashboard.nav.api_keys'), route('dashboard.api-keys.index'), 'dashboard.api-keys.*', 'M7 14a5 5 0 1 1 4.9-6H21v4h-3v3h-4v-3h-2.1A5 5 0 0 1 7 14Zm0-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z'],
                                 [__('dashboard.nav.marketplace'), route('dashboard.marketplace.index'), 'dashboard.marketplace.*', 'M4 4h16v4H4V4Zm1 6h14l-1 10H6L5 10Zm4 2v6h2v-6H9Zm4 0v6h2v-6h-2Z'],
                                 [__('dashboard.nav.messages'), route('dashboard.messages.index'), 'dashboard.messages.*', 'M4 5h16v10H7l-3 3V5Z'],
+                                ['Meta Webhook Logs', route('dashboard.meta-webhooks.index'), 'dashboard.meta-webhooks.*', 'M4 5h16v10H7l-3 3V5Z'],
                                 [__('dashboard.nav.audit_logs'), route('dashboard.audit.index'), 'dashboard.audit.*', 'M5 3h14v18H5V3Zm3 4h8v2H8V7Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z'],
                                 [__('dashboard.nav.settings'), route('dashboard.settings.index'), 'dashboard.settings.*', 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8 4a8 8 0 0 0-.2-1.8l2-1.5-2-3.4-2.4 1a8 8 0 0 0-3.1-1.8L14 2h-4l-.4 2.5a8 8 0 0 0-3.1 1.8l-2.4-1-2 3.4 2 1.5A8 8 0 0 0 4 12c0 .6.1 1.2.2 1.8l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 3.1 1.8L10 22h4l.4-2.5a8 8 0 0 0 3.1-1.8l2.4 1 2-3.4-2-1.5c.1-.6.1-1.2.1-1.8Z'],
                             ]);

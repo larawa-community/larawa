@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Internal\WorkerEventController;
 use App\Http\Controllers\MessageMediaController;
 use App\Http\Controllers\MetaWhatsappWebhookController;
+use App\Http\Middleware\LogMetaWebhook;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function () {
@@ -67,9 +68,9 @@ Route::prefix('v1')->middleware(['api.key:*', 'throttle:api'])->group(function (
 
 Route::post('/internal/worker/events', WorkerEventController::class)->middleware('internal.worker');
 
-Route::get('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'verify']);
-Route::post('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'receive']);
+Route::get('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'verify'])->middleware(LogMetaWebhook::class);
+Route::post('/meta/whatsapp/webhook', [MetaWhatsappWebhookController::class, 'receive'])->middleware(LogMetaWebhook::class);
 
 // Legacy URL aliases use the same site-level credentials.
-Route::get('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'verify']);
-Route::post('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'receive']);
+Route::get('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'verify'])->middleware(LogMetaWebhook::class);
+Route::post('/meta/whatsapp/webhook/{session}', [MetaWhatsappWebhookController::class, 'receive'])->middleware(LogMetaWebhook::class);
