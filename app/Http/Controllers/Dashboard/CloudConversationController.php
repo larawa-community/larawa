@@ -8,6 +8,7 @@ use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MessageSender;
 use App\Services\MetaWhatsappAccountService;
+use App\Services\MetaWhatsappBusinessProfileService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
@@ -16,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use RuntimeException;
 
 class CloudConversationController extends Controller
 {
@@ -44,6 +46,7 @@ class CloudConversationController extends Controller
         $this->authorizeCloudSession($request, $session, 'cloud-conversations.view');
         $canManageSessions = $request->user()->can('sessions.manage', $session->workspace);
         $accountRefreshError = null;
+        $profileRefreshError = null;
 
         if ($canManageSessions && $session->cloudConfig?->isConfigured()) {
             try {
@@ -56,6 +59,18 @@ class CloudConversationController extends Controller
             }
         }
 
+        if ($canManageSessions && $session->cloudConfig?->isConfigured()) {
+            try {
+                app(MetaWhatsappBusinessProfileService::class)->refresh($session);
+            } catch (ConnectionException|RequestException $exception) {
+                $profileRefreshError = $exception instanceof RequestException
+                    ? ($exception->response->json('error.message') ?: 'Meta rejected the business profile request.')
+                    : 'Meta is unreachable.';
+            } catch (RuntimeException $exception) {
+                $profileRefreshError = $exception->getMessage();
+            }
+        }
+
         return view('dashboard.sessions.cloud', [
             'workspace' => $session->workspace,
             'session' => $session,
@@ -63,6 +78,7 @@ class CloudConversationController extends Controller
             'canManageSessions' => $canManageSessions,
             'canManageTemplates' => $request->user()->can('cloud-templates.manage', $session->workspace),
             'accountRefreshError' => $accountRefreshError,
+            'profileRefreshError' => $profileRefreshError,
         ]);
     }
 

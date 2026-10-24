@@ -1852,3 +1852,13 @@ document.querySelector('[data-copy-meta-token]')?.addEventListener('click', asyn
         status.textContent = 'Token selected. Press Ctrl+C or Command+C to copy it.';
     }
 });
+
+// Count Unicode characters consistently with the server-side profile limits.
+document.querySelectorAll('[data-profile-field]').forEach((field) => {
+    const input = field.querySelector('[data-profile-count-input]');
+    const counter = field.querySelector('[data-profile-count]');
+    if (!input || !counter) return;
+    const update = () => { counter.textContent = `${Array.from(input.value).length}/${input.maxLength}`; };
+    input.addEventListener('input', update);
+    update();
+});

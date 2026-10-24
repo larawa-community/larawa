@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\WhatsappSession;
 use App\Services\AuditLogger;
 use App\Services\MetaWhatsappAccountService;
+use App\Services\MetaWhatsappBusinessProfileService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use RuntimeException;
 
 class CloudAccountController extends Controller
 {
@@ -105,6 +108,64 @@ class CloudAccountController extends Controller
         $audit->log('cloud_account.display_name_applied', $workspace, $request->user(), auditable: $session, metadata: ['display_name' => $approvedName], request: $request);
 
         return back()->with('status', 'The approved display name was applied to the WhatsApp phone number.');
+    }
+
+    public function refreshBusinessProfile(Request $request, WhatsappSession $session, MetaWhatsappBusinessProfileService $profiles): RedirectResponse
+    {
+        $this->authorizeSession($request, $session);
+        try {
+            $profiles->refresh($session);
+        } catch (ConnectionException|RequestException $exception) {
+            return back()->with('error', $this->providerError($exception));
+        } catch (RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        return back()->with('status', 'Business profile refreshed from Meta.');
+    }
+
+    public function updateBusinessProfile(Request $request, WhatsappSession $session, MetaWhatsappBusinessProfileService $profiles, AuditLogger $audit): RedirectResponse
+    {
+        $workspace = $this->authorizeSession($request, $session);
+        $data = $request->validate([
+            'about' => ['sometimes', 'required', 'string', 'max:139'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:512'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:256'],
+            'email' => ['sometimes', 'nullable', 'email:rfc', 'max:128'],
+            'vertical' => ['sometimes', 'nullable', Rule::in(array_keys(MetaWhatsappBusinessProfileService::CATEGORIES))],
+            'websites' => ['sometimes', 'nullable', 'array', 'max:2'],
+            'websites.*' => ['nullable', 'string', 'url:http,https', 'max:256'],
+            'profile_picture' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120', 'dimensions:min_width=640,min_height=640,ratio=1'],
+        ]);
+        unset($data['profile_picture']);
+        // A blank category leaves Meta's existing category unchanged.
+        if (empty($data['vertical'])) {
+            unset($data['vertical']);
+        }
+        foreach (['description', 'address', 'email'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] ??= '';
+            }
+        }
+        if (array_key_exists('websites', $data)) {
+            $data['websites'] = array_values(array_filter($data['websites'] ?? [], fn ($url) => filled($url)));
+        }
+        $picture = $request->file('profile_picture');
+        if ($data === [] && ! $picture) {
+            return back()->withErrors(['business_profile' => 'Enter business information or choose a profile picture.']);
+        }
+
+        try {
+            $profiles->update($session, $data, $picture);
+        } catch (ConnectionException|RequestException $exception) {
+            return back()->withInput($request->only(array_keys($data)))->with('error', $this->providerError($exception));
+        } catch (RuntimeException $exception) {
+            return back()->withInput($request->only(array_keys($data)))->with('error', $exception->getMessage());
+        }
+        $audit->log('cloud_account.business_profile_updated', $workspace, $request->user(), auditable: $session,
+            metadata: ['fields' => array_keys($data), 'picture_updated' => (bool) $picture], request: $request);
+
+        return back()->with('status', 'Business profile saved to Meta.');
     }
 
     private function authorizeSession(Request $request, WhatsappSession $session)

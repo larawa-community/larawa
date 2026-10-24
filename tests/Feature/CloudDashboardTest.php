@@ -310,7 +310,7 @@ class CloudDashboardTest extends TestCase
             ->assertSee('data-meta-action-loading', false)
             ->assertSee('data-meta-action-form', false);
 
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
 
         $user = User::factory()->create();
         $workspace->users()->attach($user, ['role' => 'workspace_user']);
@@ -321,7 +321,7 @@ class CloudDashboardTest extends TestCase
             ->assertDontSee('Set two-step verification PIN')
             ->assertDontSee('Request a new display name');
 
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
     }
 
     public function test_cloud_settings_refresh_account_status_from_meta_when_the_page_opens(): void

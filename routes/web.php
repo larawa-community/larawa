@@ -120,6 +120,8 @@ Route::middleware(['auth', 'user.enabled'])->prefix('dashboard')->name('dashboar
         Route::get('/sessions/{session}/conversations/{conversation}', [CloudConversationController::class, 'show'])->name('.sessions.conversations.show');
         Route::get('/sessions/{session}/cloud-settings', [CloudConversationController::class, 'settings'])->name('.sessions.cloud-settings');
         Route::post('/sessions/{session}/cloud-account/refresh', [CloudAccountController::class, 'refresh'])->name('.sessions.cloud-account.refresh');
+        Route::post('/sessions/{session}/cloud-account/business-profile/refresh', [CloudAccountController::class, 'refreshBusinessProfile'])->name('.sessions.cloud-account.business-profile.refresh');
+        Route::post('/sessions/{session}/cloud-account/business-profile', [CloudAccountController::class, 'updateBusinessProfile'])->name('.sessions.cloud-account.business-profile.update');
         Route::post('/sessions/{session}/cloud-account/two-factor', [CloudAccountController::class, 'setTwoFactor'])->name('.sessions.cloud-account.two-factor');
         Route::post('/sessions/{session}/cloud-account/display-name/request', [CloudAccountController::class, 'requestDisplayName'])->name('.sessions.cloud-account.display-name.request');
         Route::post('/sessions/{session}/cloud-account/display-name/apply', [CloudAccountController::class, 'applyDisplayName'])->name('.sessions.cloud-account.display-name.apply');

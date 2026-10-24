@@ -10,8 +10,8 @@
     };
 @endphp
 
-<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-    <div class="space-y-5">
+<div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div class="min-w-0 space-y-5">
     <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
         <header class="border-b border-slate-200 px-5 py-5 sm:px-6">
             <h3 class="font-semibold text-slate-900">Meta Cloud configuration</h3>
@@ -21,7 +21,7 @@
             <form method="POST" action="{{ route('dashboard.sessions.update', $session) }}" class="space-y-5 px-5 py-5 sm:px-6" data-meta-action-form data-meta-action-label="Validating configuration with Meta…">
                 @csrf @method('PATCH')
                 <p class="text-sm text-slate-600">The provider access token is managed in System Settings and applies to all Cloud API sessions.</p>
-                <fieldset class="grid gap-4 sm:grid-cols-2">
+                <fieldset class="grid min-w-0 gap-4 sm:grid-cols-2">
                     <label class="block text-sm font-semibold text-slate-700">
                         WhatsApp Business Account ID
                         <input name="waba_id" value="{{ old('waba_id', $session->cloudConfig?->waba_id) }}" placeholder="WABA ID" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-[#25d366] focus:ring-4 focus:ring-[#25d366]/15">
@@ -42,6 +42,8 @@
     </section>
 
     @if ($canManageSessions)
+        @include('dashboard.sessions.partials.cloud-business-profile')
+
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
             <header class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-5 sm:px-6">
                 <div>
@@ -135,6 +137,12 @@
 
     <aside class="space-y-5">
         @if ($canManageSessions)
+            <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 class="font-semibold text-slate-900">More profile settings</h3>
+                <p class="mt-2 text-xs leading-5 text-slate-500">For username availability, official business account requests, and Facebook or Instagram connections, open WhatsApp Manager. Available options depend on your account and Meta eligibility.</p>
+                <a href="https://business.facebook.com/wa/manage/" target="_blank" rel="noopener noreferrer" class="mt-3 inline-block text-sm font-semibold text-[#128c42]">Open WhatsApp Manager ↗</a>
+            </section>
+
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 class="font-semibold text-slate-900">Shared Meta app</h3>
                 <p class="mt-2 text-xs leading-5 text-slate-500">The Meta App ID, App Secret, and webhook are managed once for the entire site by a platform administrator. This session keeps its WABA ID and phone number ID. The provider access token is managed centrally in System Settings.</p>
